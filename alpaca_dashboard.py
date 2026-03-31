@@ -15,6 +15,7 @@ import asyncio, csv, json, logging, math, os, sys, threading, time
 # ── Sub-modules (split from monolith) ──────────────────────
 import signals as _sig
 import trending as _trend
+import finnhub_stream as _fh
 try:
     import yfinance as yf
     _YF_AVAILABLE = True
@@ -44,6 +45,7 @@ PORT           = 8888
 DEFAULT_CONFIG = {
     "api_key":    os.getenv("ALPACA_API_KEY",    "PKKFEWQ327DQ4CB5A26P5FBLJJ"),
     "secret_key": os.getenv("ALPACA_SECRET_KEY", "9vVGjo7HqxZTqNXrX6g9MCg12aSbQK38vbzPPjNQwYaj"),
+    "finnhub_key": os.getenv("FINNHUB_API_KEY", ""),
     "paper": True,
     "tickers": [
         
@@ -456,7 +458,15 @@ def _get_feed_arg(cfg: dict = None) -> dict:
         return {}
 
 def get_live_price(data_client, ticker: str, cfg: dict = None) -> float | None:
-    """Return latest close using StockLatestBarRequest — single-bar, fast."""
+    """Return latest close using Finnhub realtime state first, then Alpaca fallback."""
+    cfg = cfg or STATE.config
+    try:
+        price = _fh.get_latest_price(ticker)
+        if price is not None:
+            return price
+    except Exception:
+        pass
+
     try:
         from alpaca.data.requests import StockLatestBarRequest
         resp = data_client.get_stock_latest_bar(StockLatestBarRequest(
@@ -466,7 +476,19 @@ def get_live_price(data_client, ticker: str, cfg: dict = None) -> float | None:
     except Exception:
         return None
 
+
 def fetch_bars(data_client, ticker: str, cfg: dict) -> pd.DataFrame | None:
+    """Fetch historical bars using Finnhub if configured, else Alpaca."""
+    cfg = cfg or STATE.config
+    fh_api_key = cfg.get("finnhub_key") or os.getenv("FINNHUB_API_KEY", "")
+    if fh_api_key:
+        try:
+            bars = _fh.fetch_bars(fh_api_key, ticker, cfg)
+            if bars is not None:
+                return bars
+        except Exception as e:
+            dlog.warning(f"Finnhub fetch_bars fallback failed for {ticker}: {e}")
+
     try:
         from alpaca.data.requests import StockBarsRequest
         from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
@@ -970,6 +992,17 @@ def bot_thread(state: BotState):
     dlog.info(f"  Bot starting — {mode} mode")
     dlog.info(f"  API key: {cfg.get('api_key','')[:8]}…   tickers: {len(cfg.get('tickers',[]))}")
     dlog.info("=" * 50)
+
+    fh_api_key = cfg.get("finnhub_key") or os.getenv("FINNHUB_API_KEY", "")
+    if fh_api_key:
+        fh_thread = _fh.start_finnhub_stream(fh_api_key, cfg.get("tickers", []))
+        if fh_thread:
+            dlog.info(f"  Finnhub stream started for {len(cfg.get('tickers', []))} tickers")
+        else:
+            dlog.warning("  Finnhub stream disabled or failed to start")
+    else:
+        dlog.warning("  No Finnhub API key configured; realtime stream will be disabled")
+
     dlog.info(f"  Connecting to Alpaca ({mode})…")
 
     try:
@@ -1781,6 +1814,15 @@ async def _startup():
     t.start()
     s = threading.Thread(target=auto_scheduler, args=(STATE,), daemon=True)
     s.start()
+    fh_api_key = STATE.config.get("finnhub_key") or os.getenv("FINNHUB_API_KEY", "")
+    if fh_api_key:
+        fh_thread = _fh.start_finnhub_stream(fh_api_key, STATE.config.get("tickers", []))
+        if fh_thread:
+            dlog.info(f"[DASH] Finnhub stream started for {len(STATE.config.get('tickers', []))} tickers")
+        else:
+            dlog.warning("[DASH] Finnhub stream disabled or failed to start")
+    else:
+        dlog.warning("[DASH] No Finnhub API key configured; realtime stream will be disabled")
     dlog.info("[DASH] Dashboard ready — trending updater + auto-scheduler started")
     # Open browser automatically (slight delay so the server is fully bound first)
     def _open_browser():
@@ -1877,6 +1919,12 @@ async def api_watching_remove(ticker: str):
         STATE.add_ondeck_event("exit_manual", ticker, "Manually dismissed from On Deck")
     return {"ok": True, "ticker": ticker, "removed": removed}
 
+@app.get("/api/config")
+async def api_get_config():
+    with STATE.lock:
+        return {"ok": True, "config": dict(STATE.config)}
+
+
 @app.post("/api/config")
 async def api_config(request: Request):
     body = await request.json()
@@ -1944,6 +1992,41 @@ async def api_config(request: Request):
         t = threading.Thread(target=bot_thread, args=(STATE,), daemon=True)
         t.start()
     return {"ok": True}
+
+@app.get("/api/finnhub_prices")
+async def api_finnhub_prices(tickers: str = ""):
+    requested = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    if not requested:
+        requested = list(STATE.config.get("tickers", []))
+    if not requested:
+        return {"ok": False, "error": "No tickers requested"}
+
+    with _fh.FINNHUB_STATE.lock:
+        prices_state = dict(_fh.FINNHUB_STATE.prices)
+        connected = _fh.FINNHUB_STATE.connected
+        subscribed = list(_fh.FINNHUB_STATE.subscribed)
+
+    prices = {}
+    for ticker in requested:
+        data = prices_state.get(ticker)
+        if data is not None and data.get("price") is not None:
+            prices[ticker] = float(data["price"])
+
+    if not prices and not connected:
+        fh_api_key = STATE.config.get("finnhub_key") or os.getenv("FINNHUB_API_KEY", "")
+        if fh_api_key and len(requested) <= 10:
+            for ticker in requested:
+                if ticker not in prices:
+                    result = _fh.fetch_realtime_quote(fh_api_key, ticker)
+                    if result.get("ok") and result.get("c") is not None:
+                        prices[ticker] = float(result["c"])
+
+    return {
+        "ok": True,
+        "connected": connected,
+        "subscribed": subscribed,
+        "prices": prices,
+    }
 
 @app.get("/api/test")
 async def api_test():

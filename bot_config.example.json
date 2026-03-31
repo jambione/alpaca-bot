@@ -1,6 +1,7 @@
 {
     "api_key": "YOUR_ALPACA_API_KEY",
     "secret_key": "YOUR_ALPACA_SECRET_KEY",
+    "finnhub_key": "YOUR_FINNHUB_API_KEY",
     "paper": true,
     "tickers": [
         "AEHL",

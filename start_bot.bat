@@ -17,7 +17,7 @@ if errorlevel 1 (
 
 REM Install dependencies if needed
 echo Checking dependencies...
-python -m pip install fastapi uvicorn alpaca-py pandas numpy yfinance --quiet
+python -m pip install fastapi uvicorn alpaca-py pandas numpy yfinance websockets --quiet
 
 echo.
 echo Starting dashboard on http://localhost:8888
