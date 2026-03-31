@@ -107,8 +107,8 @@ DEFAULT_CONFIG = {
     # rte_min_supporting = how many of [rmi, volume, macd] must also pass.
     # Setting to 1 means "reversal + any one confirmation" — good starting point.
     # Setting to 2 is tighter; 3 is equivalent to the old all-AND behaviour.
-    "rte_entry_window":      10,         # bars after reversal that entry is still valid
-    "rte_min_supporting":    1,          # min of [rmi, vol, macd] that must confirm
+    "rte_entry_window":      15,         # bars after reversal that entry is still valid (widened from 10)
+    "rte_min_supporting":    1,          # min of [momentum_quality, vol, macd] that must confirm
     # ── CM RSI-2 (Larry Connors RSI-2 Strategy) ────────
     "rmi_oversold":          10,         # RSI-2 must be below this (deeply oversold)
     "rmi_ma_fast":           20,         # short-term SMA for pullback check (< this = pullback)
@@ -169,6 +169,20 @@ DEFAULT_CONFIG = {
     # Must be "" — reserved if the library ever adds support.
     "finviz_signal":         "",
     "finviz_include_news":   True,          # log top market news headlines from Finviz
+    # ── Signal sell ────────────────────────────────────────────
+    # When False, EMA-cross SELL signals are ignored — exits handled only by stop/target/trail.
+    # Recommended: False for exhaustion strategy (signal fires too early on 1-min bars).
+    "signal_sell_enabled":              False,
+    # ── Momentum Quality filter ─────────────────────────────────
+    # Requires price to be above VWAP AND RSI-14 in [rsi_min, rsi_max] at entry.
+    # Wide range keeps low-float runners (RSI 80+ is normal for these) from being blocked.
+    "momentum_quality_rsi_min":         25,   # widened from 35 — allow weak-ish setups too
+    "momentum_quality_rsi_max":         85,   # widened from 75 — low-float runners often have RSI 75-85
+    # ── Price extension guard ───────────────────────────────────
+    # Refuse entry if price has already moved more than this % above the reversal bar close.
+    # 0.05 = allow up to 5% extension before blocking — momentum stocks move fast after reversal.
+    # Set 0 to disable entirely.
+    "rte_max_entry_extension_pct":      0.05,
 }
 
 # ═══════════════════════════════════════════════════════════
@@ -1590,9 +1604,9 @@ def bot_thread(state: BotState):
                     # Count how many of the 4 exhaustion conditions passed
                     _conviction = sum([
                         bool(_latest.get("rte_reversal",  False)),
-                        bool(_latest.get("rmi_signal",    False)),
+                        bool(_latest.get("momentum_quality", False)),   # VWAP + RSI-14 in range
                         bool(_latest.get("vol_trend_up",  False)),
-                        bool(_latest.get("macd_bull",     False)),
+                        float(_latest.get("macd_line", 0) or 0) > float(_latest.get("macd_signal_line", 0) or 0),
                     ])
                     # 4/4 → full size, 3/4 → 75%, 2/4 → 50%
                     conviction_mult = {4: 1.0, 3: 0.75, 2: 0.50}.get(_conviction, 0.50)
@@ -1908,6 +1922,10 @@ async def api_config(request: Request):
             "rte_entry_window","rte_min_supporting",
             "use_rte_exhaustion",
             "micro_float_threshold",
+            # ── Momentum Quality (VWAP + RSI-14 filter) ────────
+            "momentum_quality_rsi_min","momentum_quality_rsi_max",
+            # ── Price extension guard ───────────────────────────
+            "rte_max_entry_extension_pct",
         ]
         for k in safe_keys:
             if k in body:

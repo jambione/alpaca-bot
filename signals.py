@@ -108,6 +108,13 @@ def compute_percent_r_exhaustion(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     df["rte_reversal"]        = reversal
     df["rte_boxes_completed"] = boxes
     df["rte_boxes_streak"]    = boxes_streak
+
+    # ── Reversal-close price (forward-filled) ─────────────────────────────────
+    # Used by the entry extension guard: don't enter if price has moved more
+    # than rte_max_entry_extension_pct above the reversal bar's close.
+    # ffill propagates the reversal-bar close forward through the entry window.
+    df["rte_reversal_close"] = df["close"].where(reversal).ffill()
+
     return df
 
 
@@ -246,8 +253,11 @@ def compute_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
     # ── Exhaustion strategy (default) ────────────────────────
     else:
+        # RSI-14 computed first — needed for momentum quality filter + pyramid check
+        df["rsi"] = rsi(df["close"], cfg.get("rsi_period", 14))
+
         df = compute_percent_r_exhaustion(df, cfg)
-        df = compute_rmi(df, cfg)
+        df = compute_rmi(df, cfg)           # kept for display / backward compat
         df = compute_obv_oscillator(df, cfg)
         df = compute_volume_trending_up(df, cfg)
         df = compute_macd(df, cfg)
@@ -265,16 +275,41 @@ def compute_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
         support_scores = pd.Series(0, index=df.index)
         if cfg.get("use_rmi", True):
-            support_scores += df["rmi_signal"].astype(int)
+            # ── Momentum Quality (replaces CM RSI-2 for intraday low-float stocks) ──
+            # CM RSI-2's SMA(200) trend filter is structurally mismatched for sub-$5
+            # gappers.  Momentum Quality checks what actually matters for these stocks:
+            #   1. Price above VWAP  → buyers are in control today
+            #   2. RSI-14 in 35–75  → healthy momentum, not overbought / not in freefall
+            # Both columns are already computed above.
+            _rsi_min = cfg.get("momentum_quality_rsi_min", 35)
+            _rsi_max = cfg.get("momentum_quality_rsi_max", 75)
+            df["momentum_quality"] = (
+                df["above_vwap"] &
+                (df["rsi"] >= _rsi_min) &
+                (df["rsi"] <= _rsi_max)
+            )
+            support_scores += df["momentum_quality"].astype(int)
         if cfg.get("use_volume_trending_up", True):
             support_scores += (df["vol_trend_up"] | df["vol_surge"]).astype(int)
         if cfg.get("use_macd", True):
+            # Use sustained MACD bullish alignment (not just the crossover bar)
             support_scores += (df["macd_line"] > df["macd_signal_line"]).astype(int)
 
         if cfg.get("use_rte_exhaustion", True):
             combined_buy = primary & (support_scores >= min_support)
         else:
             combined_buy = df["cross_up"] & df["vol_surge"]
+
+        # ── Price extension guard ─────────────────────────────────────────────
+        # Refuse entry if the current close is already >X% above the reversal
+        # bar's close.  Prevents buying mid-move after the initial pop.
+        # rte_reversal_close is forward-filled from compute_percent_r_exhaustion.
+        _max_ext = cfg.get("rte_max_entry_extension_pct", 0.03)
+        if _max_ext > 0 and "rte_reversal_close" in df.columns:
+            _rev_ref  = df["rte_reversal_close"].replace(0, np.nan)
+            _ext_pct  = (df["close"] - _rev_ref) / _rev_ref
+            # Only block when we have a valid reference price; pass-through if NaN
+            combined_buy = combined_buy & (_rev_ref.isna() | (_ext_pct <= _max_ext))
 
         df.loc[combined_buy, "signal"] = "BUY"
 

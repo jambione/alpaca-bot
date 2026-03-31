@@ -874,6 +874,34 @@ tr:hover td{background:rgba(255,255,255,.015)}
             <div class="cfg-hint">Require MACD line above signal line — momentum confirmation</div>
           </div>
         </div>
+
+        <div class="cfg-sep">Entry Quality</div>
+        <p class="cfg-hint" style="margin-bottom:10px">Fine-tune which entries pass. Relaxing these gives more trades; tightening reduces noise.</p>
+        <div class="cfg-grid">
+          <div class="cfg-field">
+            <label>Signal Sells</label>
+            <select id="cfg-signal-sell">
+              <option value="false">Disabled — let stop/target manage exits</option>
+              <option value="true">Enabled — exit on EMA crossover signal</option>
+            </select>
+            <div class="cfg-hint">When disabled, exits only via stop-loss, take-profit, or trailing stop. The EMA-cross SELL fires too early on 1-min bars — keep disabled for momentum plays.</div>
+          </div>
+          <div class="cfg-field">
+            <label>Max Extension from Reversal (%)</label>
+            <input type="number" id="cfg-max-extension" step="0.5" min="0" max="20" placeholder="3">
+            <div class="cfg-hint">Block entry if price has already moved more than this % above the reversal bar. 0 = disabled. Prevents chasing entries that are already extended.</div>
+          </div>
+          <div class="cfg-field">
+            <label>Momentum Quality RSI Min</label>
+            <input type="number" id="cfg-mq-rsi-min" step="1" min="10" max="60" placeholder="35">
+            <div class="cfg-hint">RSI-14 must be ≥ this to enter — avoids broken/crashed stocks. Lower to get more signals (e.g. 25).</div>
+          </div>
+          <div class="cfg-field">
+            <label>Momentum Quality RSI Max</label>
+            <input type="number" id="cfg-mq-rsi-max" step="1" min="50" max="95" placeholder="75">
+            <div class="cfg-hint">RSI-14 must be ≤ this to enter — avoids overbought entries. Raise to 80–85 to catch more late-stage runners.</div>
+          </div>
+        </div>
       </div>
 
       <div id="strat-macd-section">
@@ -1929,6 +1957,10 @@ function populateCfg(cfg) {
   $('cfg-use-cm-rsi').value     = cfg.use_rmi            !== false ? 'true' : 'false'
   $('cfg-use-vol-trend').value  = cfg.use_volume_trending_up !== false ? 'true' : 'false'
   $('cfg-use-macd').value       = cfg.use_macd              !== false ? 'true' : 'false'
+  $('cfg-signal-sell').value    = cfg.signal_sell_enabled    ? 'true' : 'false'
+  $('cfg-max-extension').value  = cfg.rte_max_entry_extension_pct != null ? (cfg.rte_max_entry_extension_pct * 100).toFixed(1) : 5
+  $('cfg-mq-rsi-min').value     = cfg.momentum_quality_rsi_min != null ? cfg.momentum_quality_rsi_min : 25
+  $('cfg-mq-rsi-max').value     = cfg.momentum_quality_rsi_max != null ? cfg.momentum_quality_rsi_max : 85
   $('cfg-macd-fast').value      = cfg.macd_fast   || 12
   $('cfg-macd-slow').value      = cfg.macd_slow   || 26
   $('cfg-macd-signal').value    = cfg.macd_signal || 9
@@ -1993,6 +2025,10 @@ async function saveConfig() {
     use_rmi:                $('cfg-use-cm-rsi').value === 'true',
     use_volume_trending_up: $('cfg-use-vol-trend').value === 'true',
     use_macd:               $('cfg-use-macd').value === 'true',
+    signal_sell_enabled:    $('cfg-signal-sell').value === 'true',
+    rte_max_entry_extension_pct: parseFloat($('cfg-max-extension').value) / 100 || 0,
+    momentum_quality_rsi_min: parseInt($('cfg-mq-rsi-min').value) || 35,
+    momentum_quality_rsi_max: parseInt($('cfg-mq-rsi-max').value) || 75,
     macd_fast:          parseInt($('cfg-macd-fast').value) || 12,
     macd_slow:          parseInt($('cfg-macd-slow').value) || 26,
     macd_signal:        parseInt($('cfg-macd-signal').value) || 9,
