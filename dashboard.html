@@ -757,12 +757,15 @@
             let watchlistSignals = {}; // Store signal data for each ticker
             let sseConnection = null;
             let strategyPollingInterval = null;
+            let strategyPollMs = null;
             let currentStrategyTicker = null;
             let watchlistPollInterval = null;
             let watchlistPollMs = null;
             let lastWatchlistPoll = 0;
-            const FAST_POLL_MS = 1000; // 1 second when near zone
-            const SLOW_POLL_MS = 10000; // 10 seconds when no tickers near zone
+            const FAST_POLL_MS = 5000; // 5 seconds when near zone
+            const SLOW_POLL_MS = 20000; // 20 seconds when no tickers near zone
+            const STRATEGY_FAST_MS = 5000; // 5 seconds when strategy is non-red/on deck
+            const STRATEGY_SLOW_MS = 10000; // 10 seconds when strategy is red/off deck
 
             function getZoneLabel(wr) {
                 const readyThreshold = parseInt(
@@ -934,6 +937,7 @@
                                     );
                                 }
                             });
+                            await fetchWatchlistSignalData(allTickers);
                             renderWatchlistScanner();
                             return;
                         }
@@ -962,6 +966,31 @@
                 }
             }
 
+            async function fetchWatchlistSignalData(tickers) {
+                if (!Array.isArray(tickers) || tickers.length === 0) return;
+                const tasks = tickers.map(async (ticker) => {
+                    try {
+                        const response = await fetch(
+                            `/api/check_signal/${ticker}`,
+                        );
+                        if (!response.ok) return;
+                        const data = await response.json();
+                        if (data && data.ok) {
+                            watchlistSignals[ticker] = data;
+                            if (typeof data.close !== "undefined") {
+                                watchlistPrices[ticker] = Number(data.close);
+                            }
+                        }
+                    } catch (e) {
+                        console.error(
+                            `Error fetching signal data for ${ticker}:`,
+                            e,
+                        );
+                    }
+                });
+                await Promise.all(tasks);
+            }
+
             function getSignalIndicatorColor(ticker) {
                 const signal = watchlistSignals[ticker];
                 if (!signal || !signal.ok)
@@ -983,10 +1012,10 @@
                 if (volTrendUp) passCount++;
                 if (wrPass) passCount++;
 
-                // Red: 0 passes, Yellow: 1-2 passes, Green: 3 passes
+                // Red: 0-1 passes, Yellow: 2 passes, Green: 3 passes
                 if (passCount === 3) {
                     return { color: "bg-emerald-500", passCount, total: 3 };
-                } else if (passCount >= 1) {
+                } else if (passCount === 2) {
                     return { color: "bg-amber-500", passCount, total: 3 };
                 } else {
                     return { color: "bg-red-500", passCount, total: 3 };
@@ -996,7 +1025,7 @@
             function getSignalSortRank(ticker) {
                 const signalInfo = getSignalIndicatorColor(ticker);
                 if (signalInfo.passCount === 3) return 0;
-                if (signalInfo.passCount >= 1) return 1;
+                if (signalInfo.passCount === 2) return 1;
                 return 2;
             }
 
@@ -1069,7 +1098,10 @@
                 const isOnDeck = onDeckData.some((s) => s.ticker === ticker);
                 const onDeckInfo = onDeckData.find((s) => s.ticker === ticker);
                 const tvUrl = `https://www.tradingview.com/chart/?symbol=${ticker}`;
-                const price = watchlistPrices[ticker];
+                const price =
+                    typeof watchlistPrices[ticker] === "number"
+                        ? watchlistPrices[ticker]
+                        : watchlistSignals[ticker]?.close;
                 const isManual = source === "manual";
                 const sourceColor = isManual ? "emerald" : "amber";
 
@@ -1081,10 +1113,10 @@
                 let tickerColorClass = "text-zinc-300"; // Default gray
                 if (signalInfo.passCount === 3) {
                     tickerColorClass = "text-emerald-400 font-bold"; // Green - all passing
-                } else if (signalInfo.passCount >= 1) {
-                    tickerColorClass = "text-amber-400"; // Yellow - some passing
-                } else if (signalInfo.passCount === 0) {
-                    tickerColorClass = "text-red-400 font-bold"; // Red - no signals passing
+                } else if (signalInfo.passCount === 2) {
+                    tickerColorClass = "text-amber-400"; // Yellow - two signals passing
+                } else {
+                    tickerColorClass = "text-red-400 font-bold"; // Red - zero or one signal passing
                 }
 
                 let wrDisplay = "-";
@@ -1154,7 +1186,7 @@
                     );
                     watchlistPollMs = pollInterval;
                     addLog(
-                        `Scanner: ${nearZone ? "FAST (1s)" : "SLOW (10s)"} mode`,
+                        `Scanner: ${nearZone ? "FAST (5s)" : "SLOW (20s)"} mode`,
                     );
                 }
             }
@@ -1340,21 +1372,17 @@
                 // Reset all indicators to pending state
                 resetStrategyIndicators();
 
-                // Start polling if ticker is on deck
-                const isOnDeck = onDeckData.some((s) => s.ticker === ticker);
-
-                if (isOnDeck) {
-                    // Real-time polling for on-deck tickers
-                    if (strategyPollingInterval)
-                        clearInterval(strategyPollingInterval);
-                    strategyPollingInterval = setInterval(
-                        () => checkStrategy(ticker),
-                        1500,
-                    );
-                } else {
-                    // One-time check for non on-deck tickers
-                    checkStrategy(ticker);
+                if (strategyPollingInterval) {
+                    clearInterval(strategyPollingInterval);
+                    strategyPollingInterval = null;
+                    strategyPollMs = null;
                 }
+
+                if (watchlistSignals[ticker] && watchlistSignals[ticker].ok) {
+                    updateStrategyModal(watchlistSignals[ticker]);
+                }
+
+                checkStrategy(ticker);
             }
 
             function closeStrategyModal() {
@@ -1516,8 +1544,9 @@
                 const rteExtreme = data.rte_extreme;
                 const rteReversal = data.rte_reversal;
 
+                const wrPass = wrFast >= -20 && wrSlow >= -20;
                 // Check if in overbought zone (fast >= -20 AND slow >= -20)
-                const inOverboughtZone = wrFast >= -20 && wrSlow >= -20;
+                const inOverboughtZone = wrPass;
                 const inBuildingZone = wrFast >= -50 && wrSlow >= -50;
 
                 document.getElementById("wr-value").textContent =
@@ -1580,10 +1609,6 @@
                 document.getElementById("stat-macd").className =
                     `font-semibold ${data.macd_bull ? "signal-pass" : "signal-fail"}`;
 
-                // Calculate overall signal
-                const passCount = [rsi2Pass, volTrendUp, rteExtreme].filter(
-                    Boolean,
-                ).length;
                 const signal = data.signal || "neutral";
 
                 document.getElementById("signal-result").textContent =
@@ -1610,14 +1635,34 @@
                     document.getElementById("signal-result").className =
                         "text-2xl font-bold signal-pending";
                 }
+
+                const passCount = [rsi2Pass, volTrendUp, wrPass].filter(
+                    Boolean,
+                ).length;
+                const nonRedZone = passCount >= 2;
+                const pollMs = nonRedZone ? STRATEGY_FAST_MS : STRATEGY_SLOW_MS;
+
+                if (currentStrategyTicker) {
+                    if (!strategyPollingInterval || strategyPollMs !== pollMs) {
+                        if (strategyPollingInterval) {
+                            clearInterval(strategyPollingInterval);
+                        }
+                        strategyPollingInterval = setInterval(() => {
+                            if (currentStrategyTicker) {
+                                checkStrategy(currentStrategyTicker);
+                            }
+                        }, pollMs);
+                        strategyPollMs = pollMs;
+                    }
+                }
             }
 
             // Boot
             window.onload = function () {
                 loadData();
                 connectSSE();
-                setInterval(loadData, 10000);
-                // Use adaptive polling - starts at 30s, switches to 1s when tickers near zone
+                setInterval(loadData, 20000);
+                // Use adaptive polling - starts at 20s, switches to 5s when tickers near zone
                 watchlistPollInterval = setInterval(
                     fetchWatchlistPrices,
                     SLOW_POLL_MS,

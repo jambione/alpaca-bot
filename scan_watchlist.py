@@ -39,9 +39,10 @@ if not API_KEY or not SECRET_KEY:
     sys.exit(1)
 
 # ── Ticker list ───────────────────────────────────────────────────────────────
-TICKERS = (
-    
-).split(",")
+TICKERS = [t.strip().upper() for t in cfg.get("tickers", []) if t and t.strip()]
+if not TICKERS:
+    print("ERROR: no tickers defined in bot_config.json")
+    sys.exit(1)
 
 # ── Fetch bars ────────────────────────────────────────────────────────────────
 data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)

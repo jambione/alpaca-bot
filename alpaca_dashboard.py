@@ -230,26 +230,16 @@ def load_config() -> dict:
 #  STOCK INFO CACHE  (float + avg daily volume via yfinance)
 # ═══════════════════════════════════════════════════════════
 
-_stock_info_cache: dict = {}   # ticker -> {float_m, avg_vol, fetched_date}
-_stock_info_lock  = threading.Lock()
+
 
 def get_stock_info(ticker: str) -> dict:
     """
     Return {float_m: float in millions, avg_vol: average daily volume}.
-    Results are cached for the calendar day.
-    Falls back to neutral values (won't filter anything) if yfinance unavailable.
+    Always fetches live data from yfinance and falls back to neutral defaults
+    if yfinance is unavailable or the fetch fails.
     """
-    today = date.today()
-    with _stock_info_lock:
-        cached = _stock_info_cache.get(ticker)
-        if cached and cached.get("fetched_date") == today:
-            return cached
-
     if not _YF_AVAILABLE:
-        result = {"float_m": 0.0, "avg_vol": 0, "fetched_date": today}
-        with _stock_info_lock:
-            _stock_info_cache[ticker] = result
-        return result
+        return {"float_m": 0.0, "avg_vol": 0}
 
     try:
         info     = yf.Ticker(ticker).info
@@ -257,37 +247,26 @@ def get_stock_info(ticker: str) -> dict:
         avg_vol  = (info.get("averageVolume10days")
                     or info.get("averageDailyVolume10Day")
                     or info.get("averageVolume") or 0)
-        result = {
-            "float_m":      round(float_sh / 1_000_000, 2) if float_sh else 0.0,
-            "avg_vol":      int(avg_vol),
-            "fetched_date": today,
+        return {
+            "float_m": round(float_sh / 1_000_000, 2) if float_sh else 0.0,
+            "avg_vol": int(avg_vol),
         }
     except Exception:
-        result = {"float_m": 0.0, "avg_vol": 0, "fetched_date": today}
-
-    with _stock_info_lock:
-        _stock_info_cache[ticker] = result
-    return result
+        return {"float_m": 0.0, "avg_vol": 0}
 
 
 def prefetch_stock_info(tickers: list, max_workers: int = 10):
     """
-    Background-friendly batch prefetch for a list of tickers.
-    Uses a thread pool so 570 tickers complete in ~30-60 s instead of 10 min.
+    Background-friendly batch fetch for a list of tickers.
+    This does not cache results; it simply retrieves the latest data.
     """
     if not _YF_AVAILABLE or not tickers:
         return
     from concurrent.futures import ThreadPoolExecutor
-    today = date.today()
-    # Only fetch tickers not already cached for today
-    needed = [t for t in tickers
-              if _stock_info_cache.get(t, {}).get("fetched_date") != today]
-    if not needed:
-        return
-    dlog.info(f"[INFO] Prefetching float/RVOL data for {len(needed)} tickers …")
+    dlog.info(f"[INFO] Prefetching float/RVOL data for {len(tickers)} tickers …")
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        list(ex.map(get_stock_info, needed))
-    dlog.info(f"[INFO] Stock info prefetch complete ({len(needed)} tickers cached)")
+        list(ex.map(get_stock_info, tickers))
+    dlog.info(f"[INFO] Stock info prefetch complete")
 
 
 # ═══════════════════════════════════════════════════════════
