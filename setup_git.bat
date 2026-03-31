@@ -31,6 +31,9 @@ git add README.md
 git add check_signals.py
 git add setup_task_scheduler.bat
 git add start_bot.bat
+git add signals.py
+git add trending.py
+git add dashboard.html
 
 echo.
 echo Files staged:
