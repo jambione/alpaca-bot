@@ -50,6 +50,45 @@
             .live-dot {
                 animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
             }
+
+            .lightbox-backdrop {
+                animation: fadeIn 0.2s ease-out;
+            }
+
+            .lightbox-content {
+                animation: slideUp 0.3s ease-out;
+            }
+
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+
+            @keyframes slideUp {
+                from { opacity: 0; transform: translateY(20px) scale(0.95); }
+                to { opacity: 1; transform: translateY(0) scale(1); }
+            }
+
+            .signal-pass {
+                color: #22c55e;
+            }
+
+            .signal-fail {
+                color: #ef4444;
+            }
+
+            .signal-pending {
+                color: #eab308;
+            }
+
+            .watchlist-card {
+                transition: all 0.2s ease;
+            }
+
+            .watchlist-card:hover {
+                background: #27272a;
+                border-color: #52525b;
+            }
         </style>
     </head>
     <body class="bg-zinc-950 text-white h-full flex flex-col">
@@ -126,35 +165,44 @@
             </div>
 
             <!-- RIGHT PANEL -->
-            <div class="w-80 bg-black border-l border-zinc-800 flex flex-col">
-                <!-- Trending Sources -->
-                <div class="p-5 border-b border-zinc-800">
-                    <h3 class="text-xs uppercase tracking-widest text-zinc-400 mb-3">Trending Sources</h3>
-                    <div id="trending-sources" class="space-y-2 text-sm">
-                        <div class="flex justify-between"><span class="text-zinc-400">StockTwits</span><span id="st-count" class="text-emerald-400">-</span></div>
-                        <div class="flex justify-between"><span class="text-zinc-400">Finviz</span><span id="finviz-count" class="text-emerald-400">-</span></div>
-                        <div class="flex justify-between"><span class="text-zinc-400">Manual</span><span id="manual-count" class="text-emerald-400">0</span></div>
+            <div class="w-96 bg-black border-l border-zinc-800 flex flex-col">
+                <!-- Unified Watchlist & Trending -->
+                <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    <!-- Panel Header -->
+                    <div class="px-5 py-4 border-b border-zinc-800 bg-zinc-900/50">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-x-3">
+                                <h3 class="text-sm uppercase tracking-widest text-zinc-400">Watchlist</h3>
+                                <div class="flex items-center gap-x-2">
+                                    <span class="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-[10px] font-medium">Manual</span>
+                                    <span class="px-2 py-0.5 bg-amber-500/20 text-amber-400 rounded text-[10px] font-medium">Trending</span>
+                                </div>
+                            </div>
+                            <span id="watchlist-count" class="text-xs text-zinc-500">0 tickers</span>
+                        </div>
+                        <!-- Source Summary -->
+                        <div class="flex items-center gap-x-4 text-xs">
+                            <span class="text-zinc-500">StockTwits: <span id="st-count" class="text-zinc-300">-</span></span>
+                            <span class="text-zinc-500">Finviz: <span id="finviz-count" class="text-zinc-300">-</span></span>
+                            <button onclick="refreshTrending()" class="ml-auto text-zinc-400 hover:text-emerald-400 transition-colors">
+                                <i class="fa-solid fa-rotate text-[10px]"></i>
+                            </button>
+                        </div>
                     </div>
-                    <button onclick="refreshTrending()" class="mt-3 w-full py-2 text-sm border border-zinc-700 hover:border-emerald-400 rounded-xl transition-colors">
-                        <i class="fa-solid fa-rotate mr-2"></i>Refresh Trending
-                    </button>
-                </div>
-
-                <!-- Manual Watchlist -->
-                <div class="p-5 border-b border-zinc-800">
-                    <h3 class="text-xs uppercase tracking-widest text-zinc-400 mb-3">Manual Watchlist</h3>
-                    <div id="manual-watchlist" class="space-y-2">
+                    
+                    <!-- Watchlist Content -->
+                    <div id="watchlist-scanner" class="flex-1 overflow-auto">
                         <!-- JS populated -->
                     </div>
                 </div>
 
                 <!-- Live Log -->
-                <div class="flex-1 flex flex-col min-h-0">
-                    <div class="px-5 py-3 border-b border-zinc-800 flex items-center justify-between text-sm">
+                <div class="h-48 flex flex-col min-h-0 border-t border-zinc-800">
+                    <div class="px-5 py-3 border-b border-zinc-800 flex items-center justify-between text-sm bg-zinc-900/50">
                         <span><span class="text-emerald-400">🔥</span> Scanner Log</span>
                         <button onclick="clearLog()" class="text-zinc-400 hover:text-red-400 text-xs">CLEAR</button>
                     </div>
-                    <div id="live-log" class="flex-1 p-5 overflow-auto font-mono text-xs text-emerald-300 space-y-1 bg-zinc-950">
+                    <div id="live-log" class="flex-1 p-4 overflow-auto font-mono text-xs text-emerald-300 space-y-1 bg-zinc-950">
                         <!-- SSE populated -->
                     </div>
                 </div>
@@ -220,12 +268,134 @@
             </div>
         </div>
 
+        <!-- STRATEGY LIGHTBOX MODAL -->
+        <div id="strategy-modal" class="hidden fixed inset-0 bg-black/90 flex items-center justify-center z-50 lightbox-backdrop">
+            <div class="bg-zinc-900 rounded-3xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-auto lightbox-content">
+                <div class="px-8 py-6 border-b border-zinc-700 flex items-center justify-between">
+                    <div class="flex items-center gap-x-4">
+                        <h2 id="strategy-modal-title" class="text-2xl font-semibold">Strategy Check</h2>
+                        <a id="strategy-tv-link" href="#" target="_blank" class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded-xl text-sm flex items-center gap-x-2 transition-colors">
+                            <i class="fa-solid fa-chart-line"></i> TradingView
+                        </a>
+                    </div>
+                    <button onclick="closeStrategyModal()" class="text-3xl text-zinc-400 hover:text-white">×</button>
+                </div>
+
+                <div class="p-8">
+                    <!-- Current Price Display -->
+                    <div class="mb-6 p-4 bg-zinc-800 rounded-2xl">
+                        <div class="flex justify-between items-center">
+                            <span class="text-zinc-400">Current Price</span>
+                            <span id="strategy-price" class="text-2xl font-mono font-bold">Loading...</span>
+                        </div>
+                    </div>
+
+                    <!-- Strategy Conditions -->
+                    <div class="space-y-4">
+                        <!-- CM RSI-2 -->
+                        <div id="rsi2-row" class="p-4 bg-zinc-800 rounded-2xl border border-zinc-700">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-x-3">
+                                    <div id="rsi2-indicator" class="w-8 h-8 rounded-full bg-zinc-600 flex items-center justify-center">
+                                        <i class="fa-solid fa-spinner fa-spin text-sm"></i>
+                                    </div>
+                                    <div>
+                                        <div class="font-medium">CM RSI-2 (Larry Connors)</div>
+                                        <div class="text-sm text-zinc-400">RSI below 25 with signal confirm</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div id="rsi2-value" class="text-lg font-mono font-bold signal-pending">...</div>
+                                    <div id="rsi2-status" class="text-sm signal-pending">Pending</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- OBV Oscillator -->
+                        <div id="obv-row" class="p-4 bg-zinc-800 rounded-2xl border border-zinc-700">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-x-3">
+                                    <div id="obv-indicator" class="w-8 h-8 rounded-full bg-zinc-600 flex items-center justify-center">
+                                        <i class="fa-solid fa-spinner fa-spin text-sm"></i>
+                                    </div>
+                                    <div>
+                                        <div class="font-medium">OBV Oscillator</div>
+                                        <div class="text-sm text-zinc-400">OBV - EMA(OBV, 20) trending up</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div id="obv-value" class="text-lg font-mono font-bold signal-pending">...</div>
+                                    <div id="obv-status" class="text-sm signal-pending">Pending</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Williams %R Trend Exhaustion -->
+                        <div id="wr-row" class="p-4 bg-zinc-800 rounded-2xl border border-zinc-700">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-x-3">
+                                    <div id="wr-indicator" class="w-8 h-8 rounded-full bg-zinc-600 flex items-center justify-center">
+                                        <i class="fa-solid fa-spinner fa-spin text-sm"></i>
+                                    </div>
+                                    <div>
+                                        <div class="font-medium">Williams %R Trend Exhaustion</div>
+                                        <div class="text-sm text-zinc-400">%R >= -20 (overbought zone)</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div id="wr-value" class="text-lg font-mono font-bold signal-pending">...</div>
+                                    <div id="wr-status" class="text-sm signal-pending">Pending</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Overall Signal -->
+                    <div id="signal-summary" class="mt-6 p-6 bg-zinc-800 rounded-2xl border border-zinc-600">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-x-3">
+                                <div id="signal-indicator" class="w-10 h-10 rounded-full bg-zinc-600 flex items-center justify-center">
+                                    <i class="fa-solid fa-spinner fa-spin"></i>
+                                </div>
+                                <div>
+                                    <div class="font-semibold text-lg">Overall Signal</div>
+                                    <div class="text-sm text-zinc-400">Combined strategy conditions</div>
+                                </div>
+                            </div>
+                            <div id="signal-result" class="text-2xl font-bold signal-pending">...</div>
+                        </div>
+                    </div>
+
+                    <!-- Additional Stats -->
+                    <div id="additional-stats" class="mt-6 grid grid-cols-2 gap-4">
+                        <div class="p-4 bg-zinc-800 rounded-2xl">
+                            <div class="text-xs text-zinc-400 mb-1">Volume Trend</div>
+                            <div id="stat-vol-trend" class="font-semibold signal-pending">...</div>
+                        </div>
+                        <div class="p-4 bg-zinc-800 rounded-2xl">
+                            <div class="text-xs text-zinc-400 mb-1">MACD Bull</div>
+                            <div id="stat-macd" class="font-semibold signal-pending">...</div>
+                        </div>
+                    </div>
+
+                    <!-- Loading indicator -->
+                    <div id="strategy-loading" class="mt-6 text-center text-zinc-400">
+                        <i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading strategy data...
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script>
             let currentFilter = "all";
             let onDeckData = [];
             let manualTickers = [];
             let trendingTickers = [];
+            let trendingSources = {};
+            let watchlistPrices = {};
             let sseConnection = null;
+            let strategyPollingInterval = null;
+            let currentStrategyTicker = null;
 
             function getZoneLabel(wr) {
                 const readyThreshold = parseInt(document.getElementById('wr-ready')?.value || -90);
@@ -252,8 +422,9 @@
                     if (trendingRes.ok) {
                         const trendingData = await trendingRes.json();
                         trendingTickers = trendingData.tickers || [];
-                        document.getElementById("st-count").textContent = Object.values(trendingData.sources || {}).filter(s => s === 'stocktwits').length || trendingTickers.length;
-                        document.getElementById("finviz-count").textContent = Object.values(trendingData.sources || {}).filter(s => s === 'finviz').length || '0';
+                        trendingSources = trendingData.sources || {};
+                        document.getElementById("st-count").textContent = Object.keys(trendingSources).filter(t => trendingSources[t] === 'stocktwits').length;
+                        document.getElementById("finviz-count").textContent = Object.keys(trendingSources).filter(t => trendingSources[t] === 'finviz').length;
                     }
 
                     // Load watch list from config
@@ -261,7 +432,7 @@
                     if (configRes.ok) {
                         const config = await configRes.json();
                         manualTickers = config.config?.tickers || [];
-                        renderManualWatchlist();
+                        renderWatchlistScanner();
                     }
 
                     // Load on deck / watching
@@ -345,21 +516,104 @@
                 });
             }
 
-            function renderManualWatchlist() {
-                const container = document.getElementById("manual-watchlist");
-                document.getElementById("manual-count").textContent = manualTickers.length;
+            async function fetchWatchlistPrices() {
+                const allTickers = [...manualTickers, ...trendingTickers].filter(t => !manualTickers.includes(t));
+                if (allTickers.length === 0) return;
                 
-                if (manualTickers.length === 0) {
-                    container.innerHTML = '<div class="text-zinc-500 text-sm">No manual tickers added</div>';
+                try {
+                    for (const ticker of allTickers) {
+                        const response = await fetch(`/api/check_signal/${ticker}`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.close) {
+                                watchlistPrices[ticker] = data.close;
+                            }
+                        }
+                    }
+                    renderWatchlistScanner();
+                } catch (e) {
+                    console.error('Error fetching prices:', e);
+                }
+            }
+
+            function renderWatchlistScanner() {
+                const container = document.getElementById("watchlist-scanner");
+                const totalTickers = manualTickers.length + trendingTickers.length;
+                document.getElementById("watchlist-count").textContent = `${totalTickers} tickers`;
+                
+                if (totalTickers === 0) {
+                    container.innerHTML = '<div class="text-zinc-500 text-sm text-center py-8">No tickers in watchlist</div>';
                     return;
                 }
                 
-                container.innerHTML = manualTickers.map(t => `
-                    <div class="flex justify-between items-center bg-zinc-800 rounded-xl px-3 py-2">
-                        <span class="font-medium">${t}</span>
-                        <button onclick="removeManualTicker('${t}')" class="text-zinc-500 hover:text-red-400"><i class="fa-solid fa-xmark"></i></button>
+                let html = '';
+                
+                // Manual tickers section
+                if (manualTickers.length > 0) {
+                    html += '<div class="px-4 py-2 bg-zinc-900/30"><span class="text-[10px] uppercase tracking-widest text-zinc-500 font-medium">Manual</span></div>';
+                    html += manualTickers.map(ticker => renderWatchlistRow(ticker, 'manual')).join('');
+                }
+                
+                // Trending tickers section
+                if (trendingTickers.length > 0) {
+                    html += '<div class="px-4 py-2 bg-zinc-900/30 border-t border-zinc-800/50"><span class="text-[10px] uppercase tracking-widest text-zinc-500 font-medium">Trending</span></div>';
+                    html += trendingTickers.map(ticker => renderWatchlistRow(ticker, trendingSources[ticker] || 'trending')).join('');
+                }
+                
+                container.innerHTML = html;
+            }
+
+            function renderWatchlistRow(ticker, source) {
+                const isOnDeck = onDeckData.some(s => s.ticker === ticker);
+                const onDeckInfo = onDeckData.find(s => s.ticker === ticker);
+                const tvUrl = `https://www.tradingview.com/chart/?symbol=${ticker}`;
+                const price = watchlistPrices[ticker];
+                const isManual = source === 'manual';
+                const sourceColor = isManual ? 'emerald' : 'amber';
+                
+                let wrDisplay = '-';
+                let statusClass = 'text-zinc-400';
+                let zoneIcon = '';
+                
+                if (isOnDeck && onDeckInfo) {
+                    const wr = onDeckInfo.wr_fast || -100;
+                    wrDisplay = wr;
+                    const zone = getZoneLabel(wr);
+                    statusClass = zone.class;
+                    zoneIcon = zone.label.split(' ')[0];
+                }
+                
+                const priceDisplay = price ? `$${price.toFixed(2)}` : '-';
+                const removeBtn = isManual 
+                    ? `<button onclick="removeManualTicker('${ticker}')" class="px-1.5 py-1 text-zinc-500 hover:text-red-400 transition-colors" title="Remove"><i class="fa-solid fa-xmark text-[10px]"></i></button>`
+                    : `<button onclick="addToWatchlist('${ticker}')" class="px-1.5 py-1 text-zinc-500 hover:text-emerald-400 transition-colors" title="Add to Watchlist"><i class="fa-solid fa-plus text-[10px]"></i></button>`;
+                
+                return `
+                    <div class="flex items-center justify-between px-4 py-3 hover:bg-zinc-800/50 border-b border-zinc-800/30 transition-colors">
+                        <div class="flex items-center gap-x-3">
+                            <a href="${tvUrl}" target="_blank" onclick="event.stopPropagation()" class="font-semibold text-sm hover:text-${sourceColor}-400 transition-colors">${ticker}</a>
+                            <span class="px-1.5 py-0.5 bg-${sourceColor}-500/10 text-${sourceColor}-400 rounded text-[10px]">${isManual ? 'Manual' : source}</span>
+                            <span class="text-zinc-600 text-xs font-mono">${priceDisplay}</span>
+                        </div>
+                        <div class="flex items-center gap-x-2">
+                            <span class="text-zinc-500 text-xs">${zoneIcon}</span>
+                            <span class="${statusClass} font-mono text-xs w-10 text-right">${wrDisplay}</span>
+                            <button onclick="openStrategyModal('${ticker}')" class="px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded text-[10px] transition-colors" title="Strategy">
+                                <i class="fa-solid fa-chart-simple"></i>
+                            </button>
+                            ${removeBtn}
+                        </div>
                     </div>
-                `).join('');
+                `;
+            }
+
+            function addToWatchlist(ticker) {
+                if (!manualTickers.includes(ticker)) {
+                    manualTickers.push(ticker);
+                    renderWatchlistScanner();
+                    addLog(`Added to watchlist: ${ticker}`);
+                    saveTickerList();
+                }
             }
 
             function setFilter(filter) {
@@ -382,16 +636,15 @@
                 if (ticker && !manualTickers.includes(ticker)) {
                     manualTickers.push(ticker);
                     input.value = "";
-                    renderManualWatchlist();
+                    renderWatchlistScanner();
                     addLog(`Added: ${ticker}`);
-                    // Save to config
                     saveTickerList();
                 }
             }
 
             function removeManualTicker(ticker) {
                 manualTickers = manualTickers.filter(t => t !== ticker);
-                renderManualWatchlist();
+                renderWatchlistScanner();
                 addLog(`Removed: ${ticker}`);
                 saveTickerList();
             }
@@ -448,6 +701,7 @@
                             source: "scanner",
                         }));
                         renderOnDeck();
+                        renderWatchlistScanner();
                         updateStatus();
                     }
                 };
@@ -479,7 +733,7 @@
             async function saveSettings() {
                 const tickers = document.getElementById("manual-tickers").value.split(",").map(t => t.trim().toUpperCase()).filter(Boolean);
                 manualTickers = tickers;
-                renderManualWatchlist();
+                renderWatchlistScanner();
                 
                 try {
                     await fetch("/api/config", {
@@ -494,11 +748,212 @@
                 await loadData();
             }
 
+            // Strategy Modal Functions
+            function openStrategyModal(ticker) {
+                currentStrategyTicker = ticker;
+                document.getElementById("strategy-modal").classList.remove("hidden");
+                document.getElementById("strategy-modal-title").textContent = `Strategy Check: ${ticker}`;
+                document.getElementById("strategy-tv-link").href = `https://www.tradingview.com/chart/?symbol=${ticker}`;
+                
+                // Reset all indicators to pending state
+                resetStrategyIndicators();
+                
+                // Start polling if ticker is on deck
+                const isOnDeck = onDeckData.some(s => s.ticker === ticker);
+                
+                if (isOnDeck) {
+                    // Real-time polling for on-deck tickers
+                    if (strategyPollingInterval) clearInterval(strategyPollingInterval);
+                    strategyPollingInterval = setInterval(() => checkStrategy(ticker), 1500);
+                } else {
+                    // One-time check for non on-deck tickers
+                    checkStrategy(ticker);
+                }
+            }
+
+            function closeStrategyModal() {
+                document.getElementById("strategy-modal").classList.add("hidden");
+                currentStrategyTicker = null;
+                if (strategyPollingInterval) {
+                    clearInterval(strategyPollingInterval);
+                    strategyPollingInterval = null;
+                }
+            }
+
+            function resetStrategyIndicators() {
+                const pendingIcon = '<i class="fa-solid fa-spinner fa-spin text-sm"></i>';
+                const pendingClass = 'signal-pending';
+                
+                // Reset all indicators
+                ['rsi2', 'obv', 'wr'].forEach(id => {
+                    document.getElementById(`${id}-indicator`).innerHTML = pendingIcon;
+                    document.getElementById(`${id}-indicator`).className = 'w-8 h-8 rounded-full bg-zinc-600 flex items-center justify-center';
+                    document.getElementById(`${id}-value`).textContent = '...';
+                    document.getElementById(`${id}-value`).className = `text-lg font-mono font-bold ${pendingClass}`;
+                    document.getElementById(`${id}-status`).textContent = 'Pending';
+                    document.getElementById(`${id}-status`).className = `text-sm ${pendingClass}`;
+                });
+                
+                document.getElementById("strategy-price").textContent = 'Loading...';
+                document.getElementById("signal-indicator").innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                document.getElementById("signal-indicator").className = 'w-10 h-10 rounded-full bg-zinc-600 flex items-center justify-center';
+                document.getElementById("signal-result").textContent = '...';
+                document.getElementById("signal-result").className = `text-2xl font-bold ${pendingClass}`;
+                document.getElementById("strategy-loading").classList.remove("hidden");
+                
+                document.getElementById("stat-vol-trend").textContent = '...';
+                document.getElementById("stat-vol-trend").className = `font-semibold ${pendingClass}`;
+                document.getElementById("stat-macd").textContent = '...';
+                document.getElementById("stat-macd").className = `font-semibold ${pendingClass}`;
+            }
+
+            async function checkStrategy(ticker) {
+                try {
+                    const response = await fetch(`/api/check_signal/${ticker}`);
+                    const data = await response.json();
+                    
+                    if (!data.ok) {
+                        document.getElementById("strategy-loading").innerHTML = `
+                            <div class="text-center py-4">
+                                <div class="text-red-400 mb-2"><i class="fa-solid fa-circle-exclamation text-2xl"></i></div>
+                                <div class="text-sm">${data.error || 'Failed to load strategy data'}</div>
+                                <div class="text-xs text-zinc-500 mt-2">Make sure the bot is running or Alpaca API is configured</div>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    updateStrategyModal(data);
+                } catch (e) {
+                    console.error('Error checking strategy:', e);
+                    document.getElementById("strategy-loading").innerHTML = `
+                        <div class="text-center py-4">
+                            <div class="text-red-400 mb-2"><i class="fa-solid fa-circle-exclamation text-2xl"></i></div>
+                            <div class="text-sm">Connection Error: ${e.message}</div>
+                            <div class="text-xs text-zinc-500 mt-2">Check if the dashboard server is running</div>
+                        </div>
+                    `;
+                    addLog(`Strategy check error for ${ticker}: ${e.message}`);
+                }
+            }
+
+            function updateStrategyModal(data) {
+                document.getElementById("strategy-loading").classList.add("hidden");
+                
+                // Update price
+                document.getElementById("strategy-price").textContent = data.close ? `$${data.close.toFixed(2)}` : 'N/A';
+                
+                // Update RSI-2 (CM RSI)
+                const rsi2 = data.rsi2;
+                const rsi2Pass = data.rsi2_pass;
+                const rsi2Threshold = data.rsi2_threshold || 25;
+                
+                document.getElementById("rsi2-value").textContent = rsi2 !== null ? rsi2.toFixed(1) : 'N/A';
+                if (rsi2 !== null) {
+                    if (rsi2Pass) {
+                        document.getElementById("rsi2-indicator").innerHTML = '<i class="fa-solid fa-check text-sm"></i>';
+                        document.getElementById("rsi2-indicator").className = 'w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center';
+                        document.getElementById("rsi2-value").className = 'text-lg font-mono font-bold signal-pass';
+                        document.getElementById("rsi2-status").textContent = 'PASS';
+                        document.getElementById("rsi2-status").className = 'text-sm signal-pass';
+                    } else {
+                        document.getElementById("rsi2-indicator").innerHTML = '<i class="fa-solid fa-xmark text-sm"></i>';
+                        document.getElementById("rsi2-indicator").className = 'w-8 h-8 rounded-full bg-red-500 flex items-center justify-center';
+                        document.getElementById("rsi2-value").className = 'text-lg font-mono font-bold signal-fail';
+                        document.getElementById("rsi2-status").textContent = `Need < ${rsi2Threshold}`;
+                        document.getElementById("rsi2-status").className = 'text-sm signal-fail';
+                    }
+                }
+                
+                // Update OBV Oscillator
+                const volTrendUp = data.vol_trend_up;
+                document.getElementById("obv-value").textContent = volTrendUp ? 'Bullish' : 'Bearish';
+                if (volTrendUp) {
+                    document.getElementById("obv-indicator").innerHTML = '<i class="fa-solid fa-check text-sm"></i>';
+                    document.getElementById("obv-indicator").className = 'w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center';
+                    document.getElementById("obv-value").className = 'text-lg font-mono font-bold signal-pass';
+                    document.getElementById("obv-status").textContent = 'PASS';
+                    document.getElementById("obv-status").className = 'text-sm signal-pass';
+                } else {
+                    document.getElementById("obv-indicator").innerHTML = '<i class="fa-solid fa-xmark text-sm"></i>';
+                    document.getElementById("obv-indicator").className = 'w-8 h-8 rounded-full bg-red-500 flex items-center justify-center';
+                    document.getElementById("obv-value").className = 'text-lg font-mono font-bold signal-fail';
+                    document.getElementById("obv-status").textContent = 'FAIL';
+                    document.getElementById("obv-status").className = 'text-sm signal-fail';
+                }
+                
+                // Update Williams %R Trend Exhaustion
+                // %R ranges from -100 to 0. Overbought zone: -20 to 0 (your trigger zone)
+                const wrFast = data.rte_fast || -100;
+                const wrSlow = data.rte_slow || -100;
+                const rteExtreme = data.rte_extreme;
+                const rteReversal = data.rte_reversal;
+                
+                // Check if in overbought zone (fast >= -20 AND slow >= -20)
+                const inOverboughtZone = wrFast >= -20 && wrSlow >= -20;
+                const inBuildingZone = wrFast >= -50 && wrSlow >= -50;
+                
+                document.getElementById("wr-value").textContent = `${wrFast.toFixed(1)} / ${wrSlow.toFixed(1)}`;
+                
+                if (inOverboughtZone && rteReversal) {
+                    document.getElementById("wr-indicator").innerHTML = '<i class="fa-solid fa-check text-sm"></i>';
+                    document.getElementById("wr-indicator").className = 'w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center';
+                    document.getElementById("wr-value").className = 'text-lg font-mono font-bold signal-pass';
+                    document.getElementById("wr-status").textContent = 'ON DECK + REVERSAL';
+                    document.getElementById("wr-status").className = 'text-sm signal-pass';
+                } else if (inOverboughtZone) {
+                    document.getElementById("wr-indicator").innerHTML = '<i class="fa-solid fa-arrow-up text-sm"></i>';
+                    document.getElementById("wr-indicator").className = 'w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center';
+                    document.getElementById("wr-value").className = 'text-lg font-mono font-bold signal-pass';
+                    document.getElementById("wr-status").textContent = 'ON DECK ✓';
+                    document.getElementById("wr-status").className = 'text-sm signal-pass';
+                } else if (inBuildingZone) {
+                    document.getElementById("wr-indicator").innerHTML = '<i class="fa-solid fa-exclamation text-sm"></i>';
+                    document.getElementById("wr-indicator").className = 'w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center';
+                    document.getElementById("wr-value").className = 'text-lg font-mono font-bold signal-pending';
+                    document.getElementById("wr-status").textContent = 'BUILDING...';
+                    document.getElementById("wr-status").className = 'text-sm signal-pending';
+                } else {
+                    document.getElementById("wr-indicator").innerHTML = '<i class="fa-solid fa-xmark text-sm"></i>';
+                    document.getElementById("wr-indicator").className = 'w-8 h-8 rounded-full bg-red-500 flex items-center justify-center';
+                    document.getElementById("wr-value").className = 'text-lg font-mono font-bold signal-fail';
+                    document.getElementById("wr-status").textContent = 'Need >= -20';
+                    document.getElementById("wr-status").className = 'text-sm signal-fail';
+                }
+                
+                // Update additional stats
+                document.getElementById("stat-vol-trend").textContent = data.vol_trend_up ? '↑ Bullish' : '↓ Bearish';
+                document.getElementById("stat-vol-trend").className = `font-semibold ${data.vol_trend_up ? 'signal-pass' : 'signal-fail'}`;
+                
+                document.getElementById("stat-macd").textContent = data.macd_bull ? '↑ Bullish' : '↓ Bearish';
+                document.getElementById("stat-macd").className = `font-semibold ${data.macd_bull ? 'signal-pass' : 'signal-fail'}`;
+                
+                // Calculate overall signal
+                const passCount = [rsi2Pass, volTrendUp, rteExtreme].filter(Boolean).length;
+                const signal = data.signal || 'neutral';
+                
+                document.getElementById("signal-result").textContent = signal.toUpperCase();
+                if (signal === 'buy' || signal === 'strong_buy') {
+                    document.getElementById("signal-indicator").innerHTML = '<i class="fa-solid fa-arrow-up text-lg"></i>';
+                    document.getElementById("signal-indicator").className = 'w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center';
+                    document.getElementById("signal-result").className = 'text-2xl font-bold signal-pass';
+                } else if (signal === 'sell' || signal === 'strong_sell') {
+                    document.getElementById("signal-indicator").innerHTML = '<i class="fa-solid fa-arrow-down text-lg"></i>';
+                    document.getElementById("signal-indicator").className = 'w-10 h-10 rounded-full bg-red-500 flex items-center justify-center';
+                    document.getElementById("signal-result").className = 'text-2xl font-bold signal-fail';
+                } else {
+                    document.getElementById("signal-indicator").innerHTML = '<i class="fa-solid fa-minus text-lg"></i>';
+                    document.getElementById("signal-indicator").className = 'w-10 h-10 rounded-full bg-zinc-600 flex items-center justify-center';
+                    document.getElementById("signal-result").className = 'text-2xl font-bold signal-pending';
+                }
+            }
+
             // Boot
             window.onload = function() {
                 loadData();
                 connectSSE();
                 setInterval(loadData, 5000);
+                setInterval(fetchWatchlistPrices, 2000);
             };
         </script>
     </body>

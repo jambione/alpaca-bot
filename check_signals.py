@@ -60,6 +60,7 @@ def williams_pr(high, low, close, length):
     return np.where(hh == ll, -50.0, (close - hh) / (hh - ll) * 100)
 
 def compute_percent_r_exhaustion(df, cfg):
+    """%R Trend Exhaustion - on deck / off deck logic."""
     s_pr = pd.Series(williams_pr(df["high"], df["low"], df["close"], 21),  index=df.index)
     l_pr = pd.Series(williams_pr(df["high"], df["low"], df["close"], 112), index=df.index)
     s_percentR   = s_pr.ewm(span=7, adjust=False).mean()
@@ -69,24 +70,47 @@ def compute_percent_r_exhaustion(df, cfg):
     final        = avg_percentR.ewm(span=avg_ma, adjust=False).mean()
     threshold    = cfg.get("rte_threshold", 20)
     side         = cfg.get("rte_side", "red").lower()
+    
     if side == "red":
-        extreme = final >= -threshold
+        overbought = final >= -threshold
     else:
-        extreme = final <= (-100 + threshold)
-    reversal = (~extreme) & extreme.shift(1).fillna(False)
-    boxes    = reversal.cumsum().fillna(0).astype(int)
-    df["rte_final"]           = final.round(2)
-    df["rte_extreme"]         = extreme
-    df["rte_reversal"]        = reversal
-    df["rte_boxes_completed"] = boxes
+        overbought = final <= (-100 + threshold)
+    
+    # ON DECK: consecutive bars in overbought zone (trend established)
+    overbought_prev = overbought.shift(1).fillna(False)
+    ob_consecutive  = overbought.groupby((~overbought).cumsum()).cumcount() + 1
+    ob_consecutive   = np.where(overbought, ob_consecutive, 0)
+    min_bars         = cfg.get("rte_min_bars", 2)
+    ob_on_deck       = overbought & (ob_consecutive >= min_bars)
+    ob_trend_start   = overbought & ~overbought_prev
+    
+    # OFF DECK: reversal/exit from overbought zone
+    ob_reversal = (~overbought) & overbought_prev
+    
+    df["rte_final"]      = final.round(2)
+    df["overbought"]     = overbought
+    df["ob_consecutive"] = ob_consecutive
+    df["ob_on_deck"]     = ob_on_deck
+    df["ob_trend_start"] = ob_trend_start
+    df["ob_reversal"]    = ob_reversal  # OFF DECK signal
     return df
 
 def compute_cm_rsi_lower(df, cfg):
+    """CM RSI-2: RSI < 25 with price MA conditions (close > SMA200 AND close < SMA5)."""
     delta = df["close"].diff()
     up    = delta.clip(lower=0).ewm(alpha=0.5, adjust=False).mean()
     down  = (-delta.clip(upper=0)).ewm(alpha=0.5, adjust=False).mean()
     rsi2  = np.where(down == 0, 100, np.where(up == 0, 0, 100 - (100 / (1 + up / down))))
     df["cm_rsi"] = pd.Series(rsi2, index=df.index).round(2)
+    
+    # MA conditions from original Pine script
+    df["ma_200"] = df["close"].rolling(200).mean()
+    df["ma_5"]   = df["close"].rolling(5).mean()
+    df["cm_rsi_approaching"] = (
+        (df["close"] > df["ma_200"]) &
+        (df["close"] < df["ma_5"]) &
+        (df["cm_rsi"] < cfg.get("cm_rsi_approaching", 25))
+    )
     return df
 
 def compute_macd(df, cfg):
@@ -100,6 +124,18 @@ def compute_macd(df, cfg):
                       (df["macd_line"].shift(1) <= df["macd_signal_line"].shift(1))
     df["macd_bear"] = (df["macd_line"] < df["macd_signal_line"]) & \
                       (df["macd_line"].shift(1) >= df["macd_signal_line"].shift(1))
+    return df
+
+def compute_obv_oscillator(df, cfg):
+    """OBV Oscillator: OBV - EMA(OBV, 20) above zero AND rising."""
+    obv_len = cfg.get("obv_length", 20)
+    obv     = (np.sign(df["close"].diff()) * df["volume"]).cumsum()
+    df["obv"]             = obv
+    df["obv_ema"]         = ema(obv, obv_len).round(2)
+    df["obv_oscillator"]  = (obv - ema(obv, obv_len)).round(2)
+    df["obv_above_zero"]  = df["obv_oscillator"] > 0
+    df["obv_rising"]      = df["obv_oscillator"] > df["obv_oscillator"].shift(1)
+    df["obv_trending_up"] = df["obv_above_zero"] & df["obv_rising"]
     return df
 
 def compute_volume_trending_up(df, cfg):
@@ -148,11 +184,12 @@ print(f"Got {len(df)} bars  ({df.index[0]}  →  {df.index[-1]})\n")
 # ── Run indicators ────────────────────────────────────────────────────────────
 df = compute_percent_r_exhaustion(df, cfg)
 df = compute_cm_rsi_lower(df, cfg)
+df = compute_obv_oscillator(df, cfg)
 df = compute_macd(df, cfg)
 df = compute_volume_trending_up(df, cfg)
 
-cm_thresh = cfg.get("cm_rsi_threshold", 10)
-min_boxes = cfg.get("rte_min_boxes", 3)
+cm_thresh     = cfg.get("cm_rsi_approaching", 25)
+min_bars      = cfg.get("rte_min_bars", 2)
 
 # ── Print last N rows ─────────────────────────────────────────────────────────
 tail = df.tail(show_rows)
@@ -160,16 +197,15 @@ tail = df.tail(show_rows)
 # Column definitions: (key, header, width, format)
 COLS = [
     ("close",               "close",    7,  lambda v: f"{v:7.3f}"),
-    ("rte_final",           "rte",      7,  lambda v: f"{v:7.2f}"),
-    ("rte_extreme",         "ext",      3,  lambda v: " ✓ " if v else " ✗ "),
-    ("rte_reversal",        "rev",      3,  lambda v: " ✓ " if v else " ✗ "),
-    ("rte_boxes_completed", "box",      3,  lambda v: f"{int(v):>3}"),
-    ("cm_rsi",              "cmRSI",    6,  lambda v: f"{v:6.2f}"),
-    ("macd_line",           "macd",     8,  lambda v: f"{v:8.4f}"),
-    ("macd_signal_line",    "sig",      8,  lambda v: f"{v:8.4f}"),
-    ("macd_bull",           "m↑",       2,  lambda v: " ✓" if v else " ✗"),
-    ("macd_bear",           "m↓",       2,  lambda v: " ✓" if v else " ✗"),
-    ("vol_trend_up",        "vol↑",     4,  lambda v: "  ✓ " if v else "  ✗ "),
+    ("rte_final",            "rte",      7,  lambda v: f"{v:7.2f}"),
+    ("ob_consecutive",       "cnt",      3,  lambda v: f"{int(v):>3}"),
+    ("ob_on_deck",           "ondeck",   6,  lambda v: " ✓ ON" if v else " ✗   "),
+    ("ob_reversal",          "offdeck",  7,  lambda v: " ✓ OFF" if v else " ✗    "),
+    ("cm_rsi",               "cmRSI",    6,  lambda v: f"{v:6.2f}"),
+    ("cm_rsi_approaching",   "cmAppr",   6,  lambda v: " ✓" if v else " ✗"),
+    ("obv_oscillator",       "obv",      9,  lambda v: f"{v:9.2f}"),
+    ("obv_trending_up",      "obvUp",    5,  lambda v: " ✓" if v else " ✗"),
+    ("macd_bull",            "m↑",       2,  lambda v: " ✓" if v else " ✗"),
 ]
 
 # Header row
@@ -189,23 +225,39 @@ print(sep)
 
 # ── Summary of last bar ───────────────────────────────────────────────────────
 last = df.iloc[-1]
-print("\n" + "="*60)
+print("\n" + "="*70)
 print(f"  LAST BAR SUMMARY  —  {ticker}  @  {df.index[-1]}")
-print("="*60)
-rte_ok  = bool(last["rte_reversal"]) and int(last["rte_boxes_completed"]) == min_boxes
-rsi_ok  = float(last["cm_rsi"]) < cm_thresh
-vol_ok  = bool(last["vol_trend_up"])
+print("="*70)
+
+# %R Trend Exhaustion
+rte_on_deck   = bool(last["ob_on_deck"])
+rte_off_deck  = bool(last["ob_reversal"])
+rte_count     = int(last["ob_consecutive"])
+print(f"\n  %R TREND EXHAUSTION:")
+print(f"    rte_final={last['rte_final']:.2f}  consecutive={rte_count}/{min_bars}")
+print(f"    ON DECK: {rte_on_deck} (need {min_bars}+ bars in overbought)")
+print(f"    OFF DECK: {rte_off_deck} (reversal from overbought)")
+
+# CM RSI-2
+rsi_approaching = bool(last["cm_rsi_approaching"])
+print(f"\n  CM RSI-2:")
+print(f"    cm_rsi={last['cm_rsi']:.2f}  approaching={rsi_approaching}")
+print(f"    (need RSI<{cm_thresh} AND close>SMA200 AND close<SMA5)")
+
+# OBV Oscillator
+obv_ok = bool(last["obv_trending_up"])
+print(f"\n  OBV OSCILLATOR:")
+print(f"    obv_oscillator={last['obv_oscillator']:.2f}  trending_up={obv_ok}")
+print(f"    (need > 0 AND rising)")
+
+# MACD
 macd_ok = bool(last["macd_bull"])
+print(f"\n  MACD:")
+print(f"    macd={last['macd_line']:.4f}  signal={last['macd_signal_line']:.4f}")
+print(f"    bull_cross={macd_ok}")
 
-def chk(v): return "✓ PASS" if v else "✗ FAIL"
-
-print(f"  RTE reversal + boxes={int(last['rte_boxes_completed'])}/{min_boxes}  {chk(rte_ok)}")
-print(f"    rte_final={last['rte_final']:.2f}  extreme={bool(last['rte_extreme'])}  reversal={bool(last['rte_reversal'])}")
-print(f"  CM RSI = {last['cm_rsi']:.2f}  (need < {cm_thresh})  {chk(rsi_ok)}")
-print(f"  Volume trending up                               {chk(vol_ok)}")
-print(f"  MACD bull crossover                              {chk(macd_ok)}")
-print(f"    macd={last['macd_line']:.4f}  signal={last['macd_signal_line']:.4f}  hist={last['macd_hist']:.4f}")
-print()
-all_pass = rte_ok and rsi_ok and vol_ok and macd_ok
+# Overall signal
+print(f"\n  {'='*70}")
+all_pass = rte_off_deck and rsi_approaching and obv_ok and macd_ok
 print(f"  → {'BUY SIGNAL would fire' if all_pass else 'No signal on last bar'}")
-print("="*60 + "\n")
+print(f"  {'='*70}\n")

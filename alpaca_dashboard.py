@@ -2069,11 +2069,17 @@ async def api_check_signal(ticker: str):
     """
     Run the current strategy on a single ticker and return indicator values.
     Used by the dashboard's "test strategy" button on ticker badges.
+    Connects to Alpaca on-demand if bot isn't running.
     """
     cfg = dict(STATE.config)
-    dc  = STATE.data_client
+    
+    # Use existing data client if available, otherwise connect on-demand
+    dc = STATE.data_client
     if dc is None:
-        return JSONResponse({"ok": False, "error": "Bot not connected — hit Test Connection first"}, status_code=503)
+        try:
+            _, dc = connect_alpaca(cfg)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": f"Cannot connect to Alpaca: {e}"}, status_code=503)
 
     t = ticker.strip().upper()
     try:
@@ -2207,7 +2213,7 @@ if __name__ == "__main__":
     print(f"""
 ╔══════════════════════════════════════════╗
 ║   Alpaca Momentum Bot  —  Dashboard      ║
-║   http://localhost:{PORT}                   ║
+║   http://localhost:{PORT}                ║
 ║   Ctrl+C to stop                         ║
 ╚══════════════════════════════════════════╝
 """)
