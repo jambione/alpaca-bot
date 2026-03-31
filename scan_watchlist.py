@@ -40,10 +40,7 @@ if not API_KEY or not SECRET_KEY:
 
 # ── Ticker list ───────────────────────────────────────────────────────────────
 TICKERS = (
-    "AEHL,AIFF,AIRS,ANNA,ARTL,ASTC,ATPC,AVTX,BATL,BFRG,BIRD,BLRX,BOXL,CDT,"
-    "DVLT,DXST,EEIQ,ELAB,FCHL,GCTK,GLND,GMEX,GVH,HCTI,HOLO,HWH,HYFM,IMDX,"
-    "JCSE,JFBR,LNAI,LTRN,MARA,METC,NAMM,NOTE,ONCO,OXBR,PLCE,PLYX,POLA,PROP,"
-    "RBNE,SST,SUNE,TMDE,TURB,UGRO,VSA,YAAS"
+    
 ).split(",")
 
 # ── Fetch bars ────────────────────────────────────────────────────────────────
