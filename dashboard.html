@@ -310,6 +310,18 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .mode-toggle{display:flex;gap:0;border:1px solid var(--border);border-radius:8px;
              overflow:hidden;width:fit-content;margin-bottom:14px}
 .mode-btn{padding:7px 18px;cursor:pointer;font-size:12px;font-weight:600;transition:.15s;border:none}
+/* Settings tabs */
+.cfg-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;gap:0;overflow-x:auto;background:var(--card2)}
+.cfg-tab{padding:9px 13px;font-size:11px;font-weight:600;cursor:pointer;background:none;border:none;
+         color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:.15s}
+.cfg-tab:hover{color:var(--text)}
+.cfg-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.cfg-pane{display:none}
+.cfg-pane.active{display:block}
+.cfg-hint{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.4}
+/* Make drawer taller + fixed footer save btn */
+#cfg-drawer{display:flex;flex-direction:column}
+.drawer-body{flex:1;overflow-y:auto;padding:14px 18px}
 .mode-btn.active-paper{background:var(--accent);color:#000}
 .mode-btn.active-live{background:var(--red);color:#fff}
 .mode-btn:not(.active-paper):not(.active-live){background:var(--card2);color:var(--muted)}
@@ -679,200 +691,428 @@ tr:hover td{background:rgba(255,255,255,.015)}
   </div>
 </div>
 <!-- GEAR DRAWER BACKDROP -->
+
 <div id="cfg-backdrop" onclick="toggleConfig()"></div>
-<!-- GEAR DRAWER -->
+<!-- SETTINGS DRAWER (tabbed) -->
 <div id="cfg-drawer">
   <div class="drawer-head">
     <span style="font-size:16px">&#9881;</span>
-    <span style="font-weight:700;color:#fff;font-size:14px">Configuration</span>
+    <span style="font-weight:700;color:#fff;font-size:14px">Settings</span>
     <span class="spacer"></span>
     <button class="btn btn-muted btn-sm" onclick="toggleConfig()">&#10005; Close</button>
   </div>
+
+  <!-- Tab bar -->
+  <div class="cfg-tabs">
+    <button class="cfg-tab active" data-tab="core"     onclick="cfgTab('core')">&#127919; Core</button>
+    <button class="cfg-tab"        data-tab="strategy" onclick="cfgTab('strategy')">&#9889; Strategy</button>
+    <button class="cfg-tab"        data-tab="filters"  onclick="cfgTab('filters')">&#128269; Filters</button>
+    <button class="cfg-tab"        data-tab="schedule" onclick="cfgTab('schedule')">&#128337; Schedule</button>
+    <button class="cfg-tab"        data-tab="advanced" onclick="cfgTab('advanced')">&#9881; Advanced</button>
+  </div>
+
   <div class="drawer-body">
-    <div class="cfg-sep accent">Mode</div>
-    <div class="mode-toggle">
-      <button class="mode-btn active-paper" id="btn-paper" onclick="setMode(\'paper\')">Paper Trading</button>
-      <button class="mode-btn" id="btn-live" onclick="setMode(\'live\')">Live Trading</button>
-    </div>
-    <div class="cfg-sep">API Credentials</div>
-    <div class="cfg-grid">
-      <div class="cfg-field"><label>API Key</label>
-        <input type="password" id="cfg-api-key" placeholder="PK&hellip;"></div>
-      <div class="cfg-field"><label>Secret Key</label>
-        <input type="password" id="cfg-secret-key" placeholder="secret&hellip;"></div>
-    </div>
-    <div class="cfg-sep">Risk &amp; Sizing</div>
-    <div class="cfg-grid">
-      <div class="cfg-field"><label>Stop Loss %</label>
-        <input type="number" id="cfg-stop" step="0.1" min="0.5" max="20"></div>
-      <div class="cfg-field"><label>Take Profit %</label>
-        <input type="number" id="cfg-tp" step="0.5" min="1" max="50"></div>
-      <div class="cfg-field"><label>Position Size %</label>
-        <input type="number" id="cfg-pos-size" step="1" min="1" max="50"></div>
-      <div class="cfg-field"><label>Trail Activate %</label>
-        <input type="number" id="cfg-trail-act" step="0.5" min="1" max="20"></div>
-      <div class="cfg-field"><label>Trail Stop %</label>
-        <input type="number" id="cfg-trail-pct" step="0.5" min="1" max="15"></div>
-      <div class="cfg-field"><label>Scan Interval (sec)</label>
-        <input type="number" id="cfg-interval" step="10" min="30"></div>
-      <div class="cfg-field"><label>Bar Timeframe</label>
-        <select id="cfg-bar">
-          <option value="1Min">1 Min</option><option value="5Min">5 Min</option>
-          <option value="15Min">15 Min</option><option value="1Hour">1 Hour</option>
-        </select></div>
-      <div class="cfg-field"><label>Pyramid</label>
-        <select id="cfg-pyramid">
-          <option value="true">Enabled</option><option value="false">Disabled</option>
-        </select></div>
-      <div class="cfg-field"><label>Pyramid Gain %</label>
-        <input type="number" id="cfg-pyr-gain" step="0.5" min="1" max="20"></div>
-    </div>
-    <div class="cfg-sep">Partial Exit</div>
-    <div class="cfg-grid">
-      <div class="cfg-field"><label>Partial Exit</label>
-        <select id="cfg-partial-on">
-          <option value="true">Enabled</option><option value="false">Disabled</option>
-        </select></div>
-      <div class="cfg-field"><label>Take Partial At %</label>
-        <input type="number" id="cfg-partial-pct" step="0.5" min="1" max="30" placeholder="6"></div>
-      <div class="cfg-field"><label>Qty to Sell %</label>
-        <input type="number" id="cfg-partial-qty" step="5" min="10" max="90" placeholder="50"></div>
-    </div>
-    <div class="cfg-sep">Trending Sources</div>
-    <div class="cfg-grid" style="grid-template-columns:1fr 1fr">
-      <div class="cfg-field"><label>Max Price ($)</label>
-        <input type="number" id="cfg-trend-price" step="0.5" min="0.5" max="500" placeholder="5.00"></div>
-    </div>
-    <div class="cfg-sep">Float &amp; Volume Filters</div>
-    <div class="cfg-grid">
-      <div class="cfg-field"><label>Float Filter</label>
-        <select id="cfg-float-on">
-          <option value="true">Enabled</option><option value="false">Disabled</option>
-        </select></div>
-      <div class="cfg-field"><label>Max Float (M shares)</label>
-        <input type="number" id="cfg-float-max" step="5" min="1" max="500" placeholder="50"></div>
-      <div class="cfg-field"><label>Micro Float ⚡ (M)</label>
-        <input type="number" id="cfg-micro-float" step="1" min="1" max="100" placeholder="10" title="On Deck: floats at or below this get ⚡ badge and top priority"></div>
-      <div class="cfg-field"><label>Daily RVOL Filter</label>
-        <select id="cfg-rvol-on">
-          <option value="true">Enabled</option><option value="false">Disabled</option>
-        </select></div>
-      <div class="cfg-field"><label>Min RVOL (x avg)</label>
-        <input type="number" id="cfg-rvol-min" step="0.5" min="0.5" max="10" placeholder="2.0"></div>
-    </div>
-    <div class="cfg-sep">Auto-Schedule (ET)</div>
-    <div class="cfg-grid">
-      <div class="cfg-field"><label>Auto-Schedule</label>
-        <select id="cfg-auto-sched">
-          <option value="true">Enabled</option><option value="false">Disabled</option>
-        </select></div>
-      <div class="cfg-field"><label>Start Time HH / MM</label>
-        <div style="display:flex;gap:4px">
-          <input type="number" id="cfg-open-h" min="6" max="12" step="1" style="width:54px" placeholder="9">
-          <input type="number" id="cfg-open-m" min="0" max="59" step="1" style="width:54px" placeholder="15">
-        </div></div>
-    </div>
-    <div id="sched-status" style="margin-bottom:12px;font-size:11px;color:var(--muted)"></div>
-    <div class="cfg-sep accent">&#9889; Strategy</div>
-    <div class="cfg-grid" style="grid-template-columns:1fr">
-      <div class="cfg-field"><label>Strategy</label>
-        <select id="cfg-strategy" onchange="onStrategyChange()">
-          <option value="exhaustion">%R Exhaustion (default)</option>
-          <option value="ema_crossover">EMA Crossover</option>
-          <option value="macd">MACD Only</option>
-        </select></div>
-    </div>
-    <div id="strat-exhaustion-section">
-      <div class="cfg-sep">%R Exhaustion Parameters</div>
-      <div class="cfg-grid">
-        <div class="cfg-field"><label>RTE Side</label>
-          <select id="cfg-rte-side">
-            <option value="red">Red (Overbought)</option>
-            <option value="blue">Blue (Oversold)</option>
-          </select></div>
-        <div class="cfg-field"><label>RTE Threshold (0&ndash;50)</label>
-          <input type="number" id="cfg-rte-threshold" step="1" min="5" max="50" placeholder="20"></div>
-        <div class="cfg-field"><label>Avg Formula MA</label>
-          <input type="number" id="cfg-rte-avg-ma" step="1" min="1" max="10" placeholder="3"></div>
-        <div class="cfg-field"><label>Min Reversals (Boxes)</label>
-          <input type="number" id="cfg-rte-boxes" step="1" min="1" max="10" placeholder="3"></div>
-        <div class="cfg-field"><label>RSI-2 Oversold (&lt;)</label>
-          <input type="number" id="cfg-cm-rsi-thresh" step="1" min="1" max="30" placeholder="10"></div>
+
+    <!-- ═══════════ TAB: CORE ═══════════ -->
+    <div id="cfg-pane-core" class="cfg-pane active">
+
+      <div class="cfg-sep accent">Mode</div>
+      <div class="mode-toggle">
+        <button class="mode-btn active-paper" id="btn-paper" onclick="setMode('paper')">Paper Trading</button>
+        <button class="mode-btn" id="btn-live" onclick="setMode('live')">&#9888; Live Trading</button>
       </div>
-      <div class="cfg-sep">Component Toggles</div>
+      <p class="cfg-hint" style="margin-bottom:12px">Paper mode uses simulated money — safe for testing. Live mode executes real orders.</p>
+
+      <div class="cfg-sep">API Credentials</div>
       <div class="cfg-grid">
-        <div class="cfg-field"><label>%R Exhaustion</label>
-          <select id="cfg-use-rte">
-            <option value="true">Enabled</option><option value="false">Disabled</option>
-          </select></div>
-        <div class="cfg-field"><label>RSI-2 Signal</label>
-          <select id="cfg-use-cm-rsi">
-            <option value="true">Enabled</option><option value="false">Disabled</option>
-          </select></div>
-        <div class="cfg-field"><label>Volume Trending Up</label>
-          <select id="cfg-use-vol-trend">
-            <option value="true">Enabled</option><option value="false">Disabled</option>
-          </select></div>
-        <div class="cfg-field"><label>MACD</label>
-          <select id="cfg-use-macd">
-            <option value="true">Enabled</option><option value="false">Disabled</option>
-          </select></div>
+        <div class="cfg-field">
+          <label>API Key</label>
+          <input type="password" id="cfg-api-key" placeholder="PK&hellip;">
+          <div class="cfg-hint">From alpaca.markets → API Keys (use Paper keys for paper mode)</div>
+        </div>
+        <div class="cfg-field">
+          <label>Secret Key</label>
+          <input type="password" id="cfg-secret-key" placeholder="secret&hellip;">
+          <div class="cfg-hint">Your Alpaca secret — never share this</div>
+        </div>
       </div>
-    </div>
-    <div id="strat-macd-section">
-      <div class="cfg-sep">MACD Parameters</div>
+
+      <div class="cfg-sep">Exit Rules</div>
       <div class="cfg-grid">
-        <div class="cfg-field"><label>Fast Period</label>
-          <input type="number" id="cfg-macd-fast" step="1" min="3" max="50" placeholder="12"></div>
-        <div class="cfg-field"><label>Slow Period</label>
-          <input type="number" id="cfg-macd-slow" step="1" min="5" max="100" placeholder="26"></div>
-        <div class="cfg-field"><label>Signal Period</label>
-          <input type="number" id="cfg-macd-signal" step="1" min="2" max="30" placeholder="9"></div>
+        <div class="cfg-field">
+          <label>Stop Loss %</label>
+          <input type="number" id="cfg-stop" step="0.1" min="0.5" max="20">
+          <div class="cfg-hint">Hard stop — sell immediately if price drops this much from entry (e.g. 4%)</div>
+        </div>
+        <div class="cfg-field">
+          <label>Take Profit %</label>
+          <input type="number" id="cfg-tp" step="0.5" min="1" max="50">
+          <div class="cfg-hint">Target exit — lock in gains when price rises this much (e.g. 12%)</div>
+        </div>
+        <div class="cfg-field">
+          <label>Trail Activate %</label>
+          <input type="number" id="cfg-trail-act" step="0.5" min="1" max="20">
+          <div class="cfg-hint">Once up this much, switch to trailing stop instead of hard stop (e.g. 5%)</div>
+        </div>
+        <div class="cfg-field">
+          <label>Trail Stop %</label>
+          <input type="number" id="cfg-trail-pct" step="0.5" min="1" max="15">
+          <div class="cfg-hint">Trailing distance from the high-water mark — tighter = exits sooner (e.g. 2%)</div>
+        </div>
       </div>
-    </div>
-    <div class="cfg-sep">&#127749; Pre-Market Trading</div>
-    <div class="cfg-grid">
-      <div class="cfg-field"><label>Enable Pre-Market</label>
-        <select id="cfg-pm-enabled">
-          <option value="false">Off (default)</option><option value="true">On</option>
-        </select></div>
-      <div class="cfg-field"><label>Session Start ET HH/MM</label>
-        <div style="display:flex;gap:6px">
-          <input type="number" id="cfg-pm-h" min="1" max="9" style="width:56px" placeholder="4">
-          <input type="number" id="cfg-pm-m" min="0" max="59" style="width:56px" placeholder="00">
-        </div></div>
-      <div class="cfg-field"><label>Limit Price Offset %</label>
-        <input type="number" id="cfg-pm-offset" step="0.01" min="0" max="1" placeholder="0.20"></div>
-      <div class="cfg-field"><label>PM Volume Mult</label>
-        <input type="number" id="cfg-pm-vol-mult" step="0.05" min="0" max="5" placeholder="0.30"></div>
-    </div>
-    <div class="cfg-sep">&#128737; Capital Protection</div>
-    <div class="cfg-grid">
-      <div class="cfg-field"><label>Daily Max Loss %</label>
-        <input type="number" id="cfg-max-daily-loss" step="0.5" min="1" max="20" placeholder="5"></div>
-      <div class="cfg-field"><label>Volume Surge Mult</label>
-        <input type="number" id="cfg-vol-surge" step="0.1" min="0.5" max="10" placeholder="1.5"></div>
-      <div class="cfg-field"><label>Bar Count</label>
-        <input type="number" id="cfg-bar-count" step="50" min="100" max="2000" placeholder="800"></div>
-    </div>
-    <div class="cfg-sep">Debug</div>
-    <div class="cfg-grid" style="grid-template-columns:1fr">
-      <div class="cfg-field"><label>Signal Debug Log</label>
-        <select id="cfg-debug-signals">
-          <option value="false">Off (default)</option><option value="true">On</option>
-        </select></div>
-    </div>
-    <div class="cfg-sep">TradingView Chart</div>
-    <div class="cfg-grid" style="grid-template-columns:1fr">
-      <div class="cfg-field"><label>Chart Base URL</label>
-        <input type="text" id="cfg-tv-url" placeholder="https://www.tradingview.com/chart/x04Gfcu8/" style="font-size:11px"></div>
-    </div>
-    <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px">
-      <button class="btn btn-green" onclick="saveConfig()">&#128190; Save &amp; Apply</button>
-      <span id="cfg-save-msg" style="font-size:12px;color:var(--green)"></span>
-    </div>
+
+      <div class="cfg-sep">Position Sizing</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Position Size %</label>
+          <input type="number" id="cfg-pos-size" step="1" min="1" max="50">
+          <div class="cfg-hint">% of available capital per trade (e.g. 10% = $1,000 on a $10,000 account)</div>
+        </div>
+      </div>
+
+      <div class="cfg-sep">Partial Exit</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Partial Exit</label>
+          <select id="cfg-partial-on">
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
+          <div class="cfg-hint">Sell a portion at a gain target — lets the rest ride while locking in some profit</div>
+        </div>
+        <div class="cfg-field">
+          <label>Take Partial At %</label>
+          <input type="number" id="cfg-partial-pct" step="0.5" min="1" max="30" placeholder="6">
+          <div class="cfg-hint">% gain threshold to trigger partial exit (e.g. 6%)</div>
+        </div>
+        <div class="cfg-field">
+          <label>Sell Qty %</label>
+          <input type="number" id="cfg-partial-qty" step="5" min="10" max="90" placeholder="50">
+          <div class="cfg-hint">What fraction of the position to sell at the partial target (e.g. 50%)</div>
+        </div>
+      </div>
+
+    </div><!-- /core -->
+
+    <!-- ═══════════ TAB: STRATEGY ═══════════ -->
+    <div id="cfg-pane-strategy" class="cfg-pane">
+
+      <div class="cfg-sep accent">Strategy</div>
+      <div class="cfg-grid" style="grid-template-columns:1fr">
+        <div class="cfg-field">
+          <label>Active Strategy</label>
+          <select id="cfg-strategy" onchange="onStrategyChange()">
+            <option value="exhaustion">%R Exhaustion (recommended)</option>
+            <option value="ema_crossover">EMA Crossover</option>
+            <option value="macd">MACD Only</option>
+          </select>
+          <div class="cfg-hint">%R Exhaustion detects momentum exhaustion reversals using Williams %R — best for low-float runners</div>
+        </div>
+      </div>
+
+      <div id="strat-exhaustion-section">
+        <div class="cfg-sep">Williams %R Exhaustion Setup</div>
+        <div class="cfg-grid">
+          <div class="cfg-field">
+            <label>Signal Direction</label>
+            <select id="cfg-rte-side">
+              <option value="red">Red — Overbought (short-squeeze / momentum breakout)</option>
+              <option value="blue">Blue — Oversold (dip buy / bounce)</option>
+            </select>
+            <div class="cfg-hint"><b>Red</b>: buy when %R is in the overbought zone (-20 to 0) — classic momentum continuation. <b>Blue</b>: buy oversold bounces.</div>
+          </div>
+          <div class="cfg-field">
+            <label>Zone Threshold (0–50)</label>
+            <input type="number" id="cfg-rte-threshold" step="1" min="5" max="50" placeholder="20">
+            <div class="cfg-hint">How deep into the overbought/oversold zone to look. Default 20 = top/bottom 20% of range.</div>
+          </div>
+          <div class="cfg-field">
+            <label>Smoothing MA</label>
+            <input type="number" id="cfg-rte-avg-ma" step="1" min="1" max="10" placeholder="3">
+            <div class="cfg-hint">Moving average applied to the %R signal to reduce noise (1 = raw, 3 = default)</div>
+          </div>
+          <div class="cfg-field">
+            <label>Min Reversal Boxes</label>
+            <input type="number" id="cfg-rte-boxes" step="1" min="1" max="10" placeholder="3">
+            <div class="cfg-hint">Number of consecutive bars in the zone needed to confirm exhaustion. More = higher conviction, fewer signals.</div>
+          </div>
+          <div class="cfg-field">
+            <label>RSI-2 Oversold (&lt;)</label>
+            <input type="number" id="cfg-cm-rsi-thresh" step="1" min="1" max="30" placeholder="10">
+            <div class="cfg-hint">Short-term RSI(2) must be this low to confirm oversold momentum. Filters out weak setups.</div>
+          </div>
+        </div>
+
+        <div class="cfg-sep">Confirmation Filters</div>
+        <p class="cfg-hint" style="margin-bottom:10px">Each filter adds a confirmation requirement. More filters = fewer but higher-quality signals.</p>
+        <div class="cfg-grid">
+          <div class="cfg-field">
+            <label>%R Exhaustion Signal</label>
+            <select id="cfg-use-rte">
+              <option value="true">Required</option><option value="false">Skip</option>
+            </select>
+            <div class="cfg-hint">Core %R exhaustion pattern — should stay enabled</div>
+          </div>
+          <div class="cfg-field">
+            <label>RSI-2 Filter</label>
+            <select id="cfg-use-cm-rsi">
+              <option value="true">Required</option><option value="false">Skip</option>
+            </select>
+            <div class="cfg-hint">Require RSI(2) confirmation — filters choppy signals</div>
+          </div>
+          <div class="cfg-field">
+            <label>Volume Trending Up</label>
+            <select id="cfg-use-vol-trend">
+              <option value="true">Required</option><option value="false">Skip</option>
+            </select>
+            <div class="cfg-hint">Require volume to be building bar-over-bar — confirms accumulation</div>
+          </div>
+          <div class="cfg-field">
+            <label>MACD Crossover</label>
+            <select id="cfg-use-macd">
+              <option value="true">Required</option><option value="false">Skip</option>
+            </select>
+            <div class="cfg-hint">Require MACD line above signal line — momentum confirmation</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="strat-macd-section">
+        <div class="cfg-sep">MACD Parameters</div>
+        <div class="cfg-grid">
+          <div class="cfg-field">
+            <label>Fast Period</label>
+            <input type="number" id="cfg-macd-fast" step="1" min="3" max="50" placeholder="12">
+            <div class="cfg-hint">Fast EMA length (default 12)</div>
+          </div>
+          <div class="cfg-field">
+            <label>Slow Period</label>
+            <input type="number" id="cfg-macd-slow" step="1" min="5" max="100" placeholder="26">
+            <div class="cfg-hint">Slow EMA length (default 26)</div>
+          </div>
+          <div class="cfg-field">
+            <label>Signal Period</label>
+            <input type="number" id="cfg-macd-signal" step="1" min="2" max="30" placeholder="9">
+            <div class="cfg-hint">Signal line EMA length (default 9)</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /strategy -->
+
+    <!-- ═══════════ TAB: FILTERS ═══════════ -->
+    <div id="cfg-pane-filters" class="cfg-pane">
+
+      <div class="cfg-sep accent">Trending Universe</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Max Price ($)</label>
+          <input type="number" id="cfg-trend-price" step="0.5" min="0.5" max="500" placeholder="5.00">
+          <div class="cfg-hint">Only scan tickers trading under this price (StockTwits + Finviz). Low-float runners under $5 move the most %.</div>
+        </div>
+        <div class="cfg-field">
+          <label>Volume Surge Mult</label>
+          <input type="number" id="cfg-vol-surge" step="0.1" min="0.5" max="10" placeholder="1.5">
+          <div class="cfg-hint">Current bar volume must be ≥ this multiple of the average to count as a volume surge (e.g. 1.5×)</div>
+        </div>
+      </div>
+
+      <div class="cfg-sep">Float Filter</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Float Filter</label>
+          <select id="cfg-float-on">
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
+          <div class="cfg-hint">Skip stocks with too many shares outstanding — high-float stocks move slowly</div>
+        </div>
+        <div class="cfg-field">
+          <label>Max Float (M shares)</label>
+          <input type="number" id="cfg-float-max" step="5" min="1" max="500" placeholder="50">
+          <div class="cfg-hint">Skip stocks with more than this many million shares in the float (e.g. 50M)</div>
+        </div>
+        <div class="cfg-field">
+          <label>Micro Float ⚡ (M)</label>
+          <input type="number" id="cfg-micro-float" step="1" min="1" max="100" placeholder="10">
+          <div class="cfg-hint">Floats at or below this get the ⚡ badge on the On Deck panel and are sorted to the top</div>
+        </div>
+      </div>
+
+      <div class="cfg-sep">Relative Volume (RVOL) Gate</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>RVOL Gate</label>
+          <select id="cfg-rvol-on">
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
+          <div class="cfg-hint">Skip buys if today's volume is not elevated vs the historical average — avoids low-interest days</div>
+        </div>
+        <div class="cfg-field">
+          <label>Min RVOL (× avg)</label>
+          <input type="number" id="cfg-rvol-min" step="0.5" min="0.5" max="10" placeholder="2.0">
+          <div class="cfg-hint">Today's volume must be at least this many times the average by now (e.g. 2.0 = twice normal volume)</div>
+        </div>
+      </div>
+
+      <div class="cfg-sep">Bar Data</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Bar Timeframe</label>
+          <select id="cfg-bar">
+            <option value="1Min">1 Min</option><option value="5Min">5 Min</option>
+            <option value="15Min">15 Min</option><option value="1Hour">1 Hour</option>
+          </select>
+          <div class="cfg-hint">Candlestick resolution for signal calculation — 1 Min is fastest and most sensitive</div>
+        </div>
+        <div class="cfg-field">
+          <label>Bar Count</label>
+          <input type="number" id="cfg-bar-count" step="50" min="100" max="2000" placeholder="800">
+          <div class="cfg-hint">How many bars to load per ticker per scan cycle. More = slower scan but better indicator accuracy.</div>
+        </div>
+      </div>
+
+    </div><!-- /filters -->
+
+    <!-- ═══════════ TAB: SCHEDULE ═══════════ -->
+    <div id="cfg-pane-schedule" class="cfg-pane">
+
+      <div class="cfg-sep accent">Auto-Schedule</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Auto-Schedule</label>
+          <select id="cfg-auto-sched">
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
+          <div class="cfg-hint">Automatically start the bot at market open time and stop at EOD — no manual intervention needed</div>
+        </div>
+        <div class="cfg-field">
+          <label>Auto-Start Time ET</label>
+          <div style="display:flex;gap:4px;align-items:center">
+            <input type="number" id="cfg-open-h" min="6" max="12" step="1" style="width:54px" placeholder="9">
+            <span style="color:var(--muted)">:</span>
+            <input type="number" id="cfg-open-m" min="0" max="59" step="1" style="width:54px" placeholder="15">
+          </div>
+          <div class="cfg-hint">Bot starts scanning at this time ET (e.g. 9:15 = after open volatility settles)</div>
+        </div>
+      </div>
+      <div id="sched-status" style="margin-bottom:12px;font-size:11px;color:var(--muted)"></div>
+
+      <div class="cfg-sep">Trading Windows</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>No New Buys Before</label>
+          <div style="display:flex;gap:4px;align-items:center">
+            <input type="number" id="cfg-nbb-h" min="6" max="16" step="1" style="width:54px" placeholder="10">
+            <span style="color:var(--muted)">:</span>
+            <input type="number" id="cfg-nbb-m" min="0" max="59" step="1" style="width:54px" placeholder="00">
+          </div>
+          <div class="cfg-hint">Skip buy signals before this time — avoids the volatile first 30-60 min of the session</div>
+        </div>
+        <div class="cfg-field">
+          <label>No New Buys After</label>
+          <div style="display:flex;gap:4px;align-items:center">
+            <input type="number" id="cfg-nba-h" min="12" max="16" step="1" style="width:54px" placeholder="15">
+            <span style="color:var(--muted)">:</span>
+            <input type="number" id="cfg-nba-m" min="0" max="59" step="1" style="width:54px" placeholder="30">
+          </div>
+          <div class="cfg-hint">Stop opening new positions after this time — avoids buying into end-of-day sell-off</div>
+        </div>
+        <div class="cfg-field">
+          <label>Scan Interval (sec)</label>
+          <input type="number" id="cfg-interval" step="10" min="30">
+          <div class="cfg-hint">How often to run the full scan loop. 60 sec is a good balance of speed vs API rate limits.</div>
+        </div>
+      </div>
+
+      <div class="cfg-sep">&#127749; Pre-Market Trading</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Enable Pre-Market</label>
+          <select id="cfg-pm-enabled">
+            <option value="false">Off (default)</option><option value="true">On</option>
+          </select>
+          <div class="cfg-hint">Trade before 9:30 AM — higher risk, lower liquidity. Use limit orders only.</div>
+        </div>
+        <div class="cfg-field">
+          <label>PM Session Start ET</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="number" id="cfg-pm-h" min="1" max="9" style="width:56px" placeholder="4">
+            <span style="color:var(--muted)">:</span>
+            <input type="number" id="cfg-pm-m" min="0" max="59" style="width:56px" placeholder="00">
+          </div>
+          <div class="cfg-hint">Earliest time to place pre-market orders</div>
+        </div>
+        <div class="cfg-field">
+          <label>Limit Offset %</label>
+          <input type="number" id="cfg-pm-offset" step="0.01" min="0" max="1" placeholder="0.20">
+          <div class="cfg-hint">Set limit price this % above current price to improve fill probability in thin markets</div>
+        </div>
+        <div class="cfg-field">
+          <label>PM Volume Mult</label>
+          <input type="number" id="cfg-pm-vol-mult" step="0.05" min="0" max="5" placeholder="0.30">
+          <div class="cfg-hint">Reduce volume requirement in pre-market (e.g. 0.3 = 30% of normal threshold)</div>
+        </div>
+      </div>
+
+    </div><!-- /schedule -->
+
+    <!-- ═══════════ TAB: ADVANCED ═══════════ -->
+    <div id="cfg-pane-advanced" class="cfg-pane">
+
+      <div class="cfg-sep accent">Pyramiding (Add to Winners)</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Pyramid</label>
+          <select id="cfg-pyramid">
+            <option value="true">Enabled</option><option value="false">Disabled</option>
+          </select>
+          <div class="cfg-hint">Add to a winning position when it reaches the gain threshold — lets winners run bigger</div>
+        </div>
+        <div class="cfg-field">
+          <label>Pyramid Gain %</label>
+          <input type="number" id="cfg-pyr-gain" step="0.5" min="1" max="20">
+          <div class="cfg-hint">% gain required before adding to position (e.g. 5% = add when up 5%)</div>
+        </div>
+      </div>
+
+      <div class="cfg-sep">&#128737; Capital Protection</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Daily Max Loss %</label>
+          <input type="number" id="cfg-max-daily-loss" step="0.5" min="1" max="20" placeholder="5">
+          <div class="cfg-hint">Stop all new buys for the day if total account drawdown exceeds this % (e.g. 5%)</div>
+        </div>
+      </div>
+
+      <div class="cfg-sep">Charting</div>
+      <div class="cfg-grid" style="grid-template-columns:1fr">
+        <div class="cfg-field">
+          <label>TradingView Chart URL</label>
+          <input type="text" id="cfg-tv-url" placeholder="https://www.tradingview.com/chart/x04Gfcu8/" style="font-size:11px">
+          <div class="cfg-hint">Your saved TradingView chart link — ticker symbol is appended automatically when you click a ticker</div>
+        </div>
+      </div>
+
+      <div class="cfg-sep">Debug</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Signal Debug Log</label>
+          <select id="cfg-debug-signals">
+            <option value="false">Off (default)</option><option value="true">On</option>
+          </select>
+          <div class="cfg-hint">Log detailed signal values (RSI, %R, MACD, etc.) each scan cycle — useful for tuning but very verbose</div>
+        </div>
+      </div>
+
+    </div><!-- /advanced -->
+
+  </div><!-- /drawer-body -->
+
+  <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0">
+    <button class="btn btn-green" onclick="saveConfig()">&#128190; Save &amp; Apply</button>
+    <span id="cfg-save-msg" style="font-size:12px;color:var(--green)"></span>
   </div>
 </div>
+
 
 <!-- inline health check: runs before the main script -->
 <script>
@@ -1453,6 +1693,12 @@ function toggleConfig() {
   if (backdrop) backdrop.classList.toggle('open', opening)
 }
 
+// ── Settings drawer tab switcher ─────────────────
+function cfgTab(name) {
+  document.querySelectorAll('.cfg-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name))
+  document.querySelectorAll('.cfg-pane').forEach(p => p.classList.toggle('active', p.id === 'cfg-pane-' + name))
+}
+
 // ── Left-column tab switcher ─────────────────────
 function switchTab(name) {
   ['wl','tr','an'].forEach(t => {
@@ -1661,10 +1907,16 @@ function populateCfg(cfg) {
   const openAt = cfg.market_open_at || [9,15]
   $('cfg-open-h').value = openAt[0]
   $('cfg-open-m').value = String(openAt[1]).padStart(2,'0')
+  const nbbAt = cfg.no_new_buys_before || [10,0]
+  $('cfg-nbb-h').value = nbbAt[0]
+  $('cfg-nbb-m').value = String(nbbAt[1]).padStart(2,'0')
+  const nbaAt = cfg.no_new_buys_after || [15,30]
+  $('cfg-nba-h').value = nbaAt[0]
+  $('cfg-nba-m').value = String(nbaAt[1]).padStart(2,'0')
   const eodAt  = cfg.eod_liquidate_at || [16,0]
   const pad = n => String(n).padStart(2,'0')
   $('sched-status').textContent = cfg.auto_schedule !== false
-    ? `⏰ Bot will auto-start at ${pad(openAt[0])}:${pad(openAt[1])} ET and liquidate at ${pad(eodAt[0])}:${pad(eodAt[1])} ET on weekdays`
+    ? `⏰ Auto-start ${pad(openAt[0])}:${pad(openAt[1])} ET · Buys ${pad(nbbAt[0])}:${pad(nbbAt[1])}–${pad(nbaAt[0])}:${pad(nbaAt[1])} ET · EOD ${pad(eodAt[0])}:${pad(eodAt[1])} ET`
     : '⏸ Auto-schedule disabled — start manually'
   // ── Strategy ──────────────────────────────────────
   $('cfg-strategy').value       = cfg.strategy || 'exhaustion'
@@ -1728,6 +1980,8 @@ async function saveConfig() {
     min_rvol:           parseFloat($('cfg-rvol-min').value) || 2.0,
     auto_schedule:      $('cfg-auto-sched').value === 'true',
     market_open_at:     [parseInt($('cfg-open-h').value)||9, parseInt($('cfg-open-m').value)||15],
+    no_new_buys_before: [parseInt($('cfg-nbb-h').value)||10, parseInt($('cfg-nbb-m').value)||0],
+    no_new_buys_after:  [parseInt($('cfg-nba-h').value)||15, parseInt($('cfg-nba-m').value)||30],
     // ── Strategy ──────────────────────────────────────
     strategy:           $('cfg-strategy').value,
     rte_side:           $('cfg-rte-side').value,

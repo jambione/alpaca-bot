@@ -10,7 +10,7 @@
 ============================================================
 """
 
-import asyncio, csv, json, logging, os, sys, threading, time
+import asyncio, csv, json, logging, math, os, sys, threading, time
 
 # ── Sub-modules (split from monolith) ──────────────────────
 import signals as _sig
@@ -343,8 +343,8 @@ class BotState:
                 "log_lines":      list(self.log_lines)[-300:],
                 "error":          self.error,
                 "manually_closed":  sorted(self.manually_closed),
-                "watching":         {t: dict(v) for t, v in self.watching.items()},
-                "ondeck_events":    list(self.ondeck_events)[-10:],
+                "watching":         _sanitize_floats({t: dict(v) for t, v in self.watching.items()}),
+                "ondeck_events":    _sanitize_floats(list(self.ondeck_events)[-10:]),
             }
             if include_static:
                 data["config"]           = dict(self.config)
@@ -354,6 +354,17 @@ class BotState:
                 data["trending_prices"]  = dict(self.trending_prices)
                 data["trending_updated"] = self.trending_updated
             return data
+
+def _sanitize_floats(obj):
+    """Recursively replace float NaN / Inf with None so json.dumps produces valid JSON."""
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_floats(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_floats(v) for v in obj]
+    return obj
+
 
 STATE = BotState()
 STATE.config = load_config()   # overlay saved settings on top of defaults
@@ -2140,7 +2151,7 @@ async def api_manual_buy(request: Request):
 async def api_watching():
     """Return current fast-scan watch set — polled every second by the On Deck panel."""
     with STATE.lock:
-        return JSONResponse({"watching": {t: dict(v) for t, v in STATE.watching.items()}})
+        return JSONResponse({"watching": _sanitize_floats({t: dict(v) for t, v in STATE.watching.items()})})
 
 @app.get("/api/trending")
 async def api_trending():
