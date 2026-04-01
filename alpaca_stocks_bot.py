@@ -10,12 +10,13 @@
 """
 
 import os
-import csv
 import time
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from trade_logger import init_trade_log, log_trade
 
 ET = ZoneInfo("America/New_York")
 
@@ -73,7 +74,6 @@ CONFIG = {
 # ─────────────────────────────────────────────
 #  LOGGING & TRADE LOGGER
 # ─────────────────────────────────────────────
-TRADE_LOG_FILE = "trade_log.csv"
 LOG_FILE = "alpaca_bot.log"
 
 logging.basicConfig(
@@ -86,29 +86,6 @@ logging.basicConfig(
     ]
 )
 log = logging.getLogger("MomentumBot")
-
-def init_trade_log():
-    if not Path(TRADE_LOG_FILE).exists():
-        with open(TRADE_LOG_FILE, "w", newline="") as f:
-            csv.writer(f).writerow([
-                "date", "time", "ticker", "action", "qty", "price", "position_value",
-                "entry_price", "pnl_dollars", "pnl_pct", "reason"
-            ])
-
-def log_trade(ticker: str, action: str, qty: int, price: float, entry_price: float = None, reason: str = "SIGNAL"):
-    now = datetime.now()
-    pnl_dollars = pnl_pct = ""
-    if entry_price and action in ("SELL", "STOP", "TP", "EXHAUSTION"):
-        pnl_dollars = round((price - entry_price) * qty, 2)
-        pnl_pct = round(((price - entry_price) / entry_price) * 100, 2)
-
-    with open(TRADE_LOG_FILE, "a", newline="") as f:
-        csv.writer(f).writerow([
-            now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S"), ticker, action, qty,
-            round(price, 2), round(price * qty, 2),
-            round(entry_price, 2) if entry_price else "",
-            pnl_dollars, pnl_pct, reason
-        ])
 
 # ─────────────────────────────────────────────
 #  INDICATORS
@@ -200,20 +177,18 @@ def compute_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     vol_ma = df["volume"].rolling(20).mean()
     df["high_volume"] = df["volume"] > (vol_ma * cfg["high_volume_multiplier"])
 
-    # Buy conditions
-    buy_conditions = []
+    # Buy conditions - use bitwise OR to combine conditions
+    buy_condition = pd.Series(False, index=df.index)
     if cfg.get("use_ema_crossover_buy", False):
-        buy_conditions.append(df["cross_up"] & (df["rsi"] < 70))
+        buy_condition = buy_condition | (df["cross_up"] & (df["rsi"] < 70))
     if cfg.get("use_low_float_high_volume", True):
-        buy_conditions.append(df["high_volume"])
+        buy_condition = buy_condition | df["high_volume"]
     if cfg.get("use_rte_exhaustion", True):
-        buy_conditions.append((df["rte_boxes_completed"] >= cfg["rte_min_boxes"]) & df["rte_extreme"])
+        buy_condition = buy_condition | ((df["rte_boxes_completed"] >= cfg["rte_min_boxes"]) & df["rte_extreme"])
     if cfg.get("use_cm_rsi_lower", True):
-        buy_conditions.append((df["cm_rsi"] < cfg["cm_rsi_threshold"]) & df["cm_rsi_rising"])
+        buy_condition = buy_condition | ((df["cm_rsi"] < cfg["cm_rsi_threshold"]) & df["cm_rsi_rising"])
     if cfg.get("use_volume_trending_up", True):
-        buy_conditions.append(df["volume_trending_up"])
-
-    buy_condition = pd.concat(buy_conditions, axis=1).all(axis=1) if buy_conditions else pd.Series(False, index=df.index)
+        buy_condition = buy_condition | df["volume_trending_up"]
     
     # Signal sells (EMA crossdown / RSI overbought) — disabled by default for exhaustion strategy
     if cfg.get("signal_sell_enabled", True):

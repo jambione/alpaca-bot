@@ -376,7 +376,7 @@ def update_trending_watchlist() -> list:
             return list(_state.trending_tickers)
 
     # ── Price filter via Alpaca quotes ─────────────────────────────────
-    from alpaca_dashboard import connect_alpaca  # lazy import to avoid circular at module load
+    from alpaca_api import connect_alpaca  # lazy import to avoid circular at module load
     dc = _state.data_client
     if dc is None:
         try:
@@ -463,8 +463,9 @@ def trending_updater():
 
         # Sleep until the next 5-minute clock boundary (9:20, 9:25, 9:30…)
         now         = datetime.now(ET)
-        mins_past   = now.minute % 5
-        secs_to_next = (5 - mins_past) * 60 - now.second
+        interval    = 5  # minutes between trending fetches
+        mins_past   = now.minute % interval
+        secs_to_next = (interval - mins_past) * 60 - now.second
         if secs_to_next <= 5:          # avoid a near-zero sleep causing a double-fire
             secs_to_next += 300
         next_fire = now + timedelta(seconds=secs_to_next)

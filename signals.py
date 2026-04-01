@@ -331,4 +331,11 @@ def compute_signals(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     df["rte_boxes_streak"] = df["ob_consecutive"].fillna(0).astype(int)
     df["rte_boxes_completed"] = df["ob_consecutive"].fillna(0).astype(int)
     
+    # Add RSI column for backward compatibility (some code uses "rsi" instead of "rsi2" or "cm_rsi")
+    df["rsi"] = df["cm_rsi"]
+    
+    # Add EMA columns for dashboard compatibility
+    df["ema_short"] = ema(df["close"], cfg.get("ema_short", 8))
+    df["ema_long"] = ema(df["close"], cfg.get("ema_long", 21))
+    
     return df

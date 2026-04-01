@@ -11,7 +11,7 @@ warnings.filterwarnings("ignore")
 sys.path.insert(0, os.path.dirname(__file__))
 
 import signals as _sig
-from alpaca_dashboard import DEFAULT_CONFIG
+from config import DEFAULT_CONFIG
 
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest

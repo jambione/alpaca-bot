@@ -10,7 +10,7 @@
 ============================================================
 """
 
-import asyncio, csv, json, logging, math, os, sys, threading, time
+import asyncio, csv, json, logging, math, os, sys, threading, time, contextlib
 
 # ── Sub-modules (split from monolith) ──────────────────────
 import signals as _sig
@@ -26,6 +26,18 @@ from datetime import datetime, date, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from config import DEFAULT_CONFIG, load_config, save_config
+from state import BotState, _sanitize_floats
+from alpaca_api import (
+    connect_alpaca,
+    fetch_bars as _api_fetch_bars,
+    fetch_bars_batch as _api_fetch_bars_batch,
+    get_latest_trade_price as _api_get_latest_trade_price,
+    get_latest_trade_prices as _api_get_latest_trade_prices,
+    close_position as _api_close_position,
+    _get_feed_arg,
+)
+
 import numpy as np
 import pandas as pd
 import uvicorn
@@ -38,193 +50,7 @@ BOT_VERSION = "2.2"   # trending: market-hours schedule (9:15+5min) · per-ticke
 # ── Constants ──────────────────────────────────────────────
 ET             = ZoneInfo("America/New_York")
 TRADE_LOG_FILE = Path("trade_log.csv")
-CONFIG_FILE    = Path(__file__).parent / "bot_config.json"
 PORT           = 8888
-
-# ── Default config (mirrors alpaca_stocks_bot.py) ──────────
-DEFAULT_CONFIG = {
-    "api_key":    os.getenv("ALPACA_API_KEY",    "PKKFEWQ327DQ4CB5A26P5FBLJJ"),
-    "secret_key": os.getenv("ALPACA_SECRET_KEY", "9vVGjo7HqxZTqNXrX6g9MCg12aSbQK38vbzPPjNQwYaj"),
-    "finnhub_key": os.getenv("FINNHUB_API_KEY", ""),
-    "paper": True,
-    "tickers": [
-        
-    ],
-    "ema_short": 8, "ema_long": 21,
-    "rsi_period": 14, "rsi_min_buy": 45, "rsi_overbought": 65, "rsi_sell": 75,
-    "volume_surge_mult": 1.5, "use_vwap": True,
-    "position_size_pct": 0.10, "max_positions": 10, "max_daily_buys": 10,
-    "stop_loss_pct": 0.04, "take_profit_pct": 0.12,
-    "trail_activation_pct": 0.05, "trail_stop_pct": 0.02,  # tighter than hard stop — protects gains
-    "pyramid_enabled": True, "pyramid_gain_pct": 0.05,
-    "pyramid_rsi_max": 68,   "pyramid_size_pct": 0.10,
-    "no_new_buys_before": [10,  0],   # no new buys before 10:00 AM — skip open chop
-    "no_new_buys_after":  [15, 30],
-    "eod_liquidate_at":  [16,  0],  # 4:00 PM ET
-    "scan_interval_sec": 60,
-    "bar_timeframe": "1Min", "bar_count": 800,
-    # ── Float filter ──────────────────────────────────
-    "use_float_filter":  True,
-    "max_float_million": 50,       # skip stocks with float > 50M shares
-    "micro_float_threshold": 10,   # On Deck: floats ≤ this (M) get ⚡ badge + top sort priority
-    # ── Daily RVOL filter ─────────────────────────────
-    "use_rvol":          True,
-    "min_rvol":          2.0,      # today's vol must be >= 2x expected by this time
-    # ── Partial exit ──────────────────────────────────
-    "partial_exit_enabled": True,
-    "partial_exit_pct":     0.06,  # take partial at +6%
-    "partial_exit_qty_pct": 0.50,  # sell 50% of position
-    # ── Auto-scheduler ────────────────────────────────
-    "auto_schedule":        True,  # auto-start at market_open_at, auto-stop at eod
-    "market_open_at":       [9, 15],  # 9:15 AM ET
-    # ── StockTwits + Finviz price filter ───────────────
-    "trending_max_price":   5.0,   # show trending tickers strictly UNDER this price (e.g. 5 → <$5.00)
-    # ── Williams %R Exhaustion ─────────────────────────
-    "wr_length":            14,
-    "wr_oversold":         -80,
-    "wr_overbought":       -20,
-    # ── CM RSI Lower ───────────────────────────────────
-    "cm_rsi_length":        14,
-    "cm_rsi_oversold":      30,
-    "cm_rsi_overbought":    70,
-    # ── OBV Oscillator ─────────────────────────────────
-    "obv_length":           20,
-    # ── Volume Trend ───────────────────────────────────
-    "vol_trend_short":      10,
-    "vol_trend_long":       50,
-    # ── Strategy ───────────────────────────────────────
-    # Options: "exhaustion" (default), "ema_crossover", "macd"
-    "strategy":              "exhaustion",
-    "use_rte_exhaustion":    True,
-    "use_rmi":               True,       # CM RSI-2 (Larry Connors) bullish signal gate
-    "use_volume_trending_up": True,
-    "use_macd":              True,
-    "rte_side":              "red",      # "red" = overbought, "blue" = oversold
-    "rte_threshold":         20,         # distance from 0 to flag extreme (applied as -threshold)
-    "rte_avg_ma":            3,          # "Average Formula MA" — composite EMA
-    "rte_min_boxes":         2,          # streak boxes required for buy (1=On Deck, 2=Buy eligible)
-    # ── Entry relaxation ───────────────────────────────
-    # The exhaustion reversal is a single-bar event. rte_entry_window allows
-    # a buy up to N bars AFTER the reversal while conditions are still aligning.
-    # rte_min_supporting = how many of [rmi, volume, macd] must also pass.
-    # Setting to 1 means "reversal + any one confirmation" — good starting point.
-    # Setting to 2 is tighter; 3 is equivalent to the old all-AND behaviour.
-    "rte_entry_window":      15,         # bars after reversal that entry is still valid (widened from 10)
-    "rte_min_supporting":    1,          # min of [momentum_quality, vol, macd] that must confirm
-    # ── CM RSI-2 (Larry Connors RSI-2 Strategy) ────────
-    "rmi_oversold":          10,         # RSI-2 must be below this (deeply oversold)
-    "rmi_ma_fast":           20,         # short-term SMA for pullback check (< this = pullback)
-    "rmi_ma_slow":           200,        # long-term SMA for trend filter (> this = uptrend)
-    # ── Pre-check fast-scan ─────────────────────────────
-    "precheck_threshold":    -40,        # both %R lines must exceed this to enter fast-scan
-    "macd_fast":             12,
-    "macd_slow":             26,
-    "macd_signal":           9,
-    # ── Pre-market ─────────────────────────────────────
-    "pre_market_enabled":    False,  # allow scanning / trading before 9:30 AM ET
-    "pre_market_start":      [4, 0], # earliest session start (ET)
-    "pre_market_limit_offset_pct": 0.002,  # add 0.2% above ask for better fill probability
-    # Volume gate during pre-market uses a lower multiplier because the 20-bar rolling
-    # average is dominated by yesterday's regular-hours volume (10-100x higher than
-    # pre-market bars).  0.3 = "show me at least 30% of the rolling-avg bar size"
-    # which still enforces "something is actually trading" without blocking every stock.
-    "pre_market_volume_surge_mult": 0.3,
-    # ── ATR-based position sizing ──────────────────────
-    # When enabled, risk a fixed % of equity per trade rather than a fixed % of equity per share.
-    # qty = (equity × risk_per_trade_pct) / (ATR × atr_risk_mult)
-    # atr_risk_mult sets how many ATRs your stop is away (1.5 = stop is 1.5 ATR below entry).
-    # Fallback to position_size_pct if ATR not available.
-    "use_atr_sizing":        False,
-    "atr_period":            14,
-    "risk_per_trade_pct":    0.02,   # risk 2% of equity per trade
-    "atr_risk_mult":         1.5,    # stop placed 1.5 ATR below entry
-    # ── Multi-timeframe confirmation ────────────────────
-    # Before entering, check that the 1-min bars also show %R exhaustion above
-    # precheck_threshold on both fast and slow lines.  Filters false breakouts.
-    "use_mtf_confirm":       False,
-    "mtf_timeframe":         "1Min",
-    "mtf_bar_count":         60,     # 1-min bars to fetch for confirmation check
-    # ── Bracket orders ──────────────────────────────────
-    # Submit stop-loss + take-profit as a server-side bracket at entry.
-    # Alpaca manages exits even if the bot goes offline.
-    # Note: brackets not supported for extended-hours orders — pre-market falls back to bot-managed.
-    "use_bracket_orders":    False,
-    # ── Capital Protection ─────────────────────────────
-    "max_daily_loss_pct":    0.05,   # halt all new buys if equity drops 5% from day open
-    # ── Debug ──────────────────────────────────────────
-    "debug_signals":         True,  # log why each buy/sell signal was accepted or rejected
-    # ── TradingView ────────────────────────────────────
-    "tv_chart_url":          "https://www.tradingview.com/chart/x04Gfcu8/",
-    # ── Finviz momentum screener ────────────────────────
-    # Second trending source alongside StockTwits.
-    # Uses finvizfinance (pip install finvizfinance).
-    # Filters map 1-to-1 to Finviz screener dropdown labels.
-    "finviz_enabled":        True,
-    "finviz_exchange":       "NASDAQ",      # "NASDAQ", "NYSE", "AMEX", or "" for all
-    "finviz_performance":    "Week Up",     # "Week Up", "Month Up", "Today Up 3%", etc.
-    "finviz_rel_volume":     "Over 2",      # relative volume vs average — "Over 1.5" / "Over 2" / "Over 3"
-    "finviz_avg_volume":     "Over 500K",   # minimum absolute daily volume for real liquidity
-    # Low float: small-float stocks amplify moves — fewer shares = bigger % swings.
-    # Maps to Finviz "Float" filter.  "" = disabled.
-    "finviz_float":          "Under 20M",  # "Under 1M" / "Under 5M" / "Under 10M" / "Under 20M" / "Under 50M"
-    # Signal: finvizfinance does NOT expose the Finviz Signal preset as a screener filter.
-    # Must be "" — reserved if the library ever adds support.
-    "finviz_signal":         "",
-    "finviz_include_news":   True,          # log top market news headlines from Finviz
-    # ── Signal sell ────────────────────────────────────────────
-    # When False, EMA-cross SELL signals are ignored — exits handled only by stop/target/trail.
-    # Recommended: False for exhaustion strategy (signal fires too early on 1-min bars).
-    "signal_sell_enabled":              False,
-    # ── Momentum Quality filter ─────────────────────────────────
-    # Requires price to be above VWAP AND RSI-14 in [rsi_min, rsi_max] at entry.
-    # Wide range keeps low-float runners (RSI 80+ is normal for these) from being blocked.
-    "momentum_quality_rsi_min":         25,   # widened from 35 — allow weak-ish setups too
-    "momentum_quality_rsi_max":         85,   # widened from 75 — low-float runners often have RSI 75-85
-    # ── Price extension guard ───────────────────────────────────
-    # Refuse entry if price has already moved more than this % above the reversal bar close.
-    # 0.05 = allow up to 5% extension before blocking — momentum stocks move fast after reversal.
-    # Set 0 to disable entirely.
-    "rte_max_entry_extension_pct":      0.05,
-}
-
-# ═══════════════════════════════════════════════════════════
-#  CONFIG PERSISTENCE
-# ═══════════════════════════════════════════════════════════
-
-def save_config(cfg: dict):
-    """Atomically write config — write to .tmp then rename so a crash never corrupts the file."""
-    import tempfile
-    try:
-        tmp_fd, tmp_path = tempfile.mkstemp(dir=CONFIG_FILE.parent, suffix=".tmp")
-        try:
-            with os.fdopen(tmp_fd, "w") as f:
-                json.dump(cfg, f, indent=2)
-            Path(tmp_path).replace(CONFIG_FILE)
-        except Exception:
-            try: os.unlink(tmp_path)
-            except: pass
-            raise
-    except Exception as e:
-        print(f"[CFG] Failed to save config: {e}")
-
-def load_config() -> dict:
-    """
-    Load saved config from bot_config.json and merge with DEFAULT_CONFIG
-    so new keys added in code are always present.
-    """
-    cfg = dict(DEFAULT_CONFIG)
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                saved = json.load(f)
-            cfg.update(saved)
-            print(f"[CFG] Loaded config from {CONFIG_FILE}")
-        except Exception as e:
-            print(f"[CFG] Failed to load config ({e}) — using defaults")
-    else:
-        print("[CFG] No saved config found — using defaults")
-    return cfg
-
 
 # ═══════════════════════════════════════════════════════════
 #  STOCK INFO CACHE  (float + avg daily volume via yfinance)
@@ -241,12 +67,22 @@ def get_stock_info(ticker: str) -> dict:
     if not _YF_AVAILABLE:
         return {"float_m": 0.0, "avg_vol": 0}
 
+    ticker = ticker.strip().upper()
+    if not ticker:
+        return {"float_m": 0.0, "avg_vol": 0}
+
     try:
-        info     = yf.Ticker(ticker).info
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            info = yf.Ticker(ticker).info
         float_sh = info.get("floatShares") or info.get("sharesOutstanding") or 0
-        avg_vol  = (info.get("averageVolume10days")
-                    or info.get("averageDailyVolume10Day")
-                    or info.get("averageVolume") or 0)
+        avg_vol = (
+            info.get("averageVolume10days")
+            or info.get("averageDailyVolume10Day")
+            or info.get("averageVolume")
+            or 0
+        )
         return {
             "float_m": round(float_sh / 1_000_000, 2) if float_sh else 0.0,
             "avg_vol": int(avg_vol),
@@ -272,94 +108,6 @@ def prefetch_stock_info(tickers: list, max_workers: int = 10):
 # ═══════════════════════════════════════════════════════════
 #  SHARED STATE
 # ═══════════════════════════════════════════════════════════
-
-class BotState:
-    def __init__(self):
-        self.lock          = threading.Lock()
-        self.running       = False
-        self.stop_event    = threading.Event()
-        self.config        = DEFAULT_CONFIG.copy()
-        self.account       = {}
-        self.positions     = []        # list of dicts
-        self.entry_prices  = {}
-        self.high_water    = {}
-        self.pyramided     = set()
-        self.daily_buys    = 0
-        self.last_scan     = None
-        self.log_lines     = deque(maxlen=300)
-        self.trading_client = None
-        self.data_client    = None
-        self.error             = None
-        self.today_trades      = []    # trades from CSV today
-        self.trending_tickers  = []    # merged under-price list (StockTwits + Finviz)
-        self.trending_sources  = {}    # {ticker: "stocktwits" | "finviz" | "both"}
-        self.trending_prices   = {}    # {ticker: float price} captured during price filter
-        self.trending_updated  = None  # timestamp of last trending fetch
-        self.manually_closed   = set() # tickers manually closed — block auto-rebuy until unlocked
-        self.watching          = {}    # {ticker: {"rte_fast": float, "rte_slow": float}} — fast-scan set
-        self.ondeck_events     = deque(maxlen=30)  # recent On Deck entry/exit events
-        self.partial_exited    = set() # tickers that have taken a partial exit today (fast-watch mirror)
-        self.fast_closing      = set() # tickers currently being closed by fast-watch (prevents double-sell)
-
-    def add_log(self, level: str, msg: str):
-        ts = datetime.now(ET).strftime("%H:%M:%S")
-        with self.lock:
-            self.log_lines.append({"ts": ts, "level": level, "msg": msg})
-
-    def add_ondeck_event(self, direction: str, ticker: str, reason: str, conditions: dict = None):
-        """direction: 'enter' | 'exit_buy' | 'exit_fail' | 'exit_manual' | 'exit_position'"""
-        ts = datetime.now(ET).strftime("%H:%M:%S")
-        with self.lock:
-            self.ondeck_events.append({
-                "ts":         ts,
-                "direction":  direction,
-                "ticker":     ticker,
-                "reason":     reason,
-                "conditions": conditions or {},
-            })
-
-    def snapshot(self, include_static: bool = False) -> dict:
-        """
-        Return the current state.
-        include_static=True  → full payload including config + trades (sent once on connect + on change)
-        include_static=False → lightweight payload for 3-second ticks (positions, logs, account only)
-        """
-        with self.lock:
-            data = {
-                "running":        self.running,
-                "paper":          self.config.get("paper", True),
-                "account":        dict(self.account),
-                "positions":      list(self.positions),
-                "entry_prices":   dict(self.entry_prices),
-                "high_water":     dict(self.high_water),
-                "daily_buys":     self.daily_buys,
-                "max_daily_buys": self.config.get("max_daily_buys", 10),
-                "last_scan":      self.last_scan,
-                "log_lines":      list(self.log_lines)[-300:],
-                "error":          self.error,
-                "manually_closed":  sorted(self.manually_closed),
-                "watching":         _sanitize_floats({t: dict(v) for t, v in self.watching.items()}),
-                "ondeck_events":    _sanitize_floats(list(self.ondeck_events)[-10:]),
-            }
-            if include_static:
-                data["config"]           = dict(self.config)
-                data["today_trades"]     = list(self.today_trades)
-                data["trending_tickers"] = list(self.trending_tickers)
-                data["trending_sources"] = dict(self.trending_sources)
-                data["trending_prices"]  = dict(self.trending_prices)
-                data["trending_updated"] = self.trending_updated
-            return data
-
-def _sanitize_floats(obj):
-    """Recursively replace float NaN / Inf with None so json.dumps produces valid JSON."""
-    if isinstance(obj, float):
-        return None if (math.isnan(obj) or math.isinf(obj)) else obj
-    if isinstance(obj, dict):
-        return {k: _sanitize_floats(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_sanitize_floats(v) for v in obj]
-    return obj
-
 
 STATE = BotState()
 STATE.config = load_config()   # overlay saved settings on top of defaults
@@ -392,14 +140,6 @@ from signals import (
 #  ALPACA HELPERS
 # ═══════════════════════════════════════════════════════════
 
-def connect_alpaca(cfg: dict):
-    from alpaca.trading.client import TradingClient
-    from alpaca.data.historical import StockHistoricalDataClient
-    paper   = cfg.get("paper", True)
-    trading = TradingClient(cfg["api_key"], cfg["secret_key"], paper=paper)
-    data    = StockHistoricalDataClient(cfg["api_key"], cfg["secret_key"])
-    return trading, data
-
 import concurrent.futures as _cf_module
 # Single 32-worker executor shared by:
 #   • parallel bar fetch (submit+wait with 25s batch timeout)
@@ -423,19 +163,6 @@ def _timed(fn, *args, timeout: float = 10, default=None, label: str = ""):
         dlog.error(f"  [ERR] {label or fn.__name__}: {e}")
         return default
 
-def _get_feed_arg(cfg: dict = None) -> dict:
-    """Return the correct Alpaca DataFeed kwarg based on config.
-    Defaults to IEX (free tier). Set data_feed='SIP' in config when subscribed
-    to Alpaca Unlimited for full pre-market data and tighter spreads."""
-    try:
-        from alpaca.data.enums import DataFeed as _DF
-        cfg = cfg or STATE.config
-        feed_name = cfg.get("data_feed", "IEX").upper()
-        feed = _DF.SIP if feed_name == "SIP" else _DF.IEX
-        return {"feed": feed}
-    except Exception:
-        return {}
-
 def get_live_price(data_client, ticker: str, cfg: dict = None) -> float | None:
     """Return latest close using Finnhub realtime state first, then Alpaca fallback."""
     cfg = cfg or STATE.config
@@ -446,14 +173,9 @@ def get_live_price(data_client, ticker: str, cfg: dict = None) -> float | None:
     except Exception:
         pass
 
-    try:
-        from alpaca.data.requests import StockLatestBarRequest
-        resp = data_client.get_stock_latest_bar(StockLatestBarRequest(
-            symbol_or_symbols=ticker, **_get_feed_arg(cfg)))
-        bar  = resp.get(ticker)
-        return float(bar.close) if bar else None
-    except Exception:
+    if data_client is None:
         return None
+    return _api_get_latest_trade_price(data_client, ticker, cfg)
 
 
 def fetch_bars(data_client, ticker: str, cfg: dict) -> pd.DataFrame | None:
@@ -468,39 +190,9 @@ def fetch_bars(data_client, ticker: str, cfg: dict) -> pd.DataFrame | None:
         except Exception as e:
             dlog.warning(f"Finnhub fetch_bars fallback failed for {ticker}: {e}")
 
-    try:
-        from alpaca.data.requests import StockBarsRequest
-        from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
-        tf_map = {
-            "1Min":  TimeFrame(1,  TimeFrameUnit.Minute),
-            "5Min":  TimeFrame(5,  TimeFrameUnit.Minute),
-            "15Min": TimeFrame(15, TimeFrameUnit.Minute),
-            "1Hour": TimeFrame(1,  TimeFrameUnit.Hour),
-            "1Day":  TimeFrame(1,  TimeFrameUnit.Day),
-        }
-        tf  = tf_map.get(cfg.get("bar_timeframe","5Min"), TimeFrame(5, TimeFrameUnit.Minute))
-        try:
-            from alpaca.data.enums import DataFeed as _DF
-            _feed_arg = {"feed": _DF.IEX}
-        except Exception:
-            _feed_arg = {}
-        req = StockBarsRequest(
-            symbol_or_symbols=ticker,
-            timeframe=tf,
-            start=datetime.now(timezone.utc) - timedelta(days=10),
-            limit=cfg.get("bar_count", 300),
-            **_feed_arg,
-        )
-        bars = data_client.get_stock_bars(req).df
-        if bars is None or bars.empty: return None
-        if isinstance(bars.index, pd.MultiIndex):
-            bars = bars.xs(ticker, level="symbol")
-        bars = bars[["open","high","low","close","volume"]].copy()
-        bars["close"] = pd.to_numeric(bars["close"], errors="coerce")
-        return bars.dropna(subset=["close"])
-    except Exception as e:
-        dlog.error(f"fetch_bars {ticker}: {e}")
+    if data_client is None:
         return None
+    return _api_fetch_bars(data_client, ticker, cfg)
 
 def get_account_info(trading_client) -> dict:
     try:
@@ -625,21 +317,7 @@ def submit_order_smart(trading_client, ticker: str, qty: int, side_str: str,
 
 
 def close_position(trading_client, ticker: str) -> bool:
-    try:
-        from alpaca.trading.requests import MarketOrderRequest
-        from alpaca.trading.enums    import OrderSide, TimeInForce
-        positions = {p.symbol: int(float(p.qty)) for p in trading_client.get_all_positions()}
-        qty = positions.get(ticker, 0)
-        if qty < 1:
-            return False
-        trading_client.submit_order(MarketOrderRequest(
-            symbol=ticker, qty=qty,
-            side=OrderSide.SELL, time_in_force=TimeInForce.DAY,
-        ))
-        return True
-    except Exception as e:
-        dlog.error(f"close_position {ticker}: {e}")
-        return False
+    return _api_close_position(trading_client, ticker)
 
 def load_today_trades() -> list:
     today = datetime.now(ET).strftime("%Y-%m-%d")
@@ -717,28 +395,21 @@ def fast_scan_thread(state: BotState):
             fast_min = cfg.get("ema_long", 21) + 5
         precheck_thr = cfg.get("precheck_threshold", -40)
 
-        # ── Fetch + compute all watched tickers in parallel ──────────────
-        def _fast_job(args):
-            _t, _dc, _fc = args
-            _df = fetch_bars(_dc, _t, _fc)
-            if _df is None or len(_df) < fast_min:
-                return _t, None
-            try:
-                return _t, compute_signals(_df, _fc)
-            except:
-                return _t, None
+        # ── Fetch bars for all watched tickers in a single Alpaca batch request.
+        fast_results: dict[str, dict] = {}
+        batch_bars = _api_fetch_bars_batch(data_client, list(watch_copy), fast_cfg) if data_client else {}
 
-        _futs = {_FETCH_EXECUTOR.submit(_fast_job, (t, data_client, fast_cfg)): t
-                 for t in watch_copy}
-        _done_f, _ = _cf_module.wait(_futs.keys(), timeout=8)
-        fast_results: dict = {}
-        for _f in _done_f:
-            _t = _futs[_f]
+        for ticker in watch_copy:
+            df = batch_bars.get(ticker)
+            if df is None or len(df) < fast_min:
+                df = fetch_bars(data_client, ticker, fast_cfg) if data_client else None
+            if df is None or len(df) < fast_min:
+                fast_results[ticker] = None
+                continue
             try:
-                _, _df_sig = _f.result()
-                fast_results[_t] = _df_sig
-            except:
-                fast_results[_t] = None
+                fast_results[ticker] = compute_signals(df, fast_cfg)
+            except Exception:
+                fast_results[ticker] = None
 
         for ticker in list(watch_copy.keys()):
             if state.stop_event.is_set():
@@ -830,21 +501,14 @@ def fast_scan_thread(state: BotState):
             _dclient  = state.data_client
 
         if _ep_copy and _trading and _dclient:
-            # Fetch live prices in parallel for all open positions
-            def _price_job(t):
-                p = get_live_price(_dclient, t, cfg)
-                return t, p
-            _pfuts = {_FETCH_EXECUTOR.submit(_price_job, t): t for t in _ep_copy}
-            _done_p, _ = _cf_module.wait(_pfuts.keys(), timeout=6)
+            # Fetch live prices once for all open positions.
             _live_prices = {}
-            for _f in _done_p:
-                _t = _pfuts[_f]
-                try:
-                    _, _p = _f.result()
-                    if _p:
-                        _live_prices[_t] = _p
-                except:
-                    pass
+            if _dclient:
+                _live_prices = _api_get_latest_trade_prices(_dclient, list(_ep_copy.keys()), cfg)
+            for _t in list(_ep_copy.keys()):
+                price = _fh.get_latest_price(_t)
+                if price is not None:
+                    _live_prices[_t] = price
 
             _newly_closing = set()
             for ticker, ep in list(_ep_copy.items()):
@@ -1279,11 +943,12 @@ def bot_thread(state: BotState):
 
                 # ── Daily RVOL filter ─────────────────────────
                 rvol = 0.0
+                avg_vol = 0
                 if cfg.get("use_rvol") and cfg.get("min_rvol", 0) > 0:
                     avg_vol = si.get("avg_vol", 0)   # yfinance fallback, may be 0
                     rvol = calc_rvol(df, avg_vol)
-                    if rvol > 0 and rvol < cfg["min_rvol"]:
-                        dlog.info(f"  {ticker:<6} SKIP — rvol {rvol:.2f} < min {cfg['min_rvol']}")
+                    if rvol.iloc[-1] > 0 and rvol.iloc[-1] < cfg["min_rvol"]:
+                        dlog.info(f"  {ticker:<6} SKIP — rvol {rvol.iloc[-1]:.2f} < min {cfg['min_rvol']}")
                         continue
 
                 df = sig_results.get(ticker)
@@ -1576,14 +1241,13 @@ def bot_thread(state: BotState):
                     # Re-check RVOL right now using the bar data already in memory.
                     # The Finviz pre-filter checks RVOL at scan time; this catches
                     # cases where volume has faded by the time the signal fires.
-                    if cfg.get("use_rvol", True):
-                        _min_rvol    = cfg.get("min_rvol", 2.0)
-                        _entry_rvol  = calc_rvol(df)
-                        if _entry_rvol > 0 and _entry_rvol < _min_rvol:
-                            dlog.info(f"  [RVOL]  {ticker} BUY skipped — entry RVOL {_entry_rvol:.2f}x < min {_min_rvol:.1f}x (volume faded)")
-                            continue
-                        elif cfg.get("debug_signals") and _entry_rvol > 0:
-                            dlog.info(f"  [RVOL]  {ticker} entry RVOL {_entry_rvol:.2f}x ✓")
+                    _min_rvol    = cfg.get("min_rvol", 2.0)
+                    _entry_rvol  = calc_rvol(df)
+                    if _entry_rvol.iloc[-1] > 0 and _entry_rvol.iloc[-1] < _min_rvol:
+                        dlog.info(f"  [RVOL]  {ticker} BUY skipped — entry RVOL {_entry_rvol.iloc[-1]:.2f}x < min {_min_rvol:.1f}x (volume faded)")
+                        continue
+                    elif cfg.get("debug_signals") and _entry_rvol.iloc[-1] > 0:
+                        dlog.info(f"  [RVOL]  {ticker} entry RVOL {_entry_rvol.iloc[-1]:.2f}x ✓")
 
                     # ── Multi-timeframe confirmation (optional) ────────────
                     # Fetch 1-min bars and check %R fast+slow both above precheck_threshold.
@@ -1911,6 +1575,7 @@ async def api_config(request: Request):
         # Update allowed keys only
         safe_keys = [
             "paper","api_key","secret_key","tickers",
+            "scan_region_top","scan_region_left","scan_region_width","scan_region_height",
             "ema_short","ema_long","rsi_period","rsi_min_buy","rsi_overbought","rsi_sell",
             "volume_surge_mult","use_vwap",
             "position_size_pct","max_positions","max_daily_buys",
@@ -1971,6 +1636,110 @@ async def api_config(request: Request):
         t = threading.Thread(target=bot_thread, args=(STATE,), daemon=True)
         t.start()
     return {"ok": True}
+
+
+def _get_scanner_region(cfg: dict) -> dict[str, int]:
+    return {
+        "top": int(cfg.get("scan_region_top", 200) or 200),
+        "left": int(cfg.get("scan_region_left", 300) or 300),
+        "width": int(cfg.get("scan_region_width", 1200) or 1200),
+        "height": int(cfg.get("scan_region_height", 600) or 600),
+    }
+
+@app.get("/api/scanner/test")
+async def api_scanner_test():
+    region = _get_scanner_region(STATE.config)
+    try:
+        import mss
+        import numpy as np
+        import cv2
+        from screen_ticker_scanner import create_ocr_reader, scan_frame
+    except Exception as exc:
+        error = str(exc)
+        dlog.error(f"[SCANNER TEST] dependency load failed: {error}")
+        return {"ok": False, "error": "Scanner dependencies unavailable: " + error}
+
+    try:
+        reader = create_ocr_reader()
+        with mss.mss() as sct:
+            screenshot = sct.grab(region)
+        frame = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGRA2BGR)
+        tickers = scan_frame(frame, reader, detail=True)
+        timestamp = datetime.now(ET).strftime("%H:%M:%S")
+        return {
+            "ok": True,
+            "timestamp": timestamp,
+            "region": region,
+            "tickers": tickers,
+        }
+    except Exception as exc:
+        error = str(exc)
+        dlog.error(f"[SCANNER TEST] failed: {error}")
+        return {"ok": False, "error": error}
+
+@app.get("/api/scanner/read_region")
+async def api_scanner_read_region(
+    top: int | None = None,
+    left: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
+):
+    region = _get_scanner_region(STATE.config)
+    if top is not None:
+        region["top"] = top
+    if left is not None:
+        region["left"] = left
+    if width is not None:
+        region["width"] = width
+    if height is not None:
+        region["height"] = height
+
+    try:
+        import mss
+        import numpy as np
+        import cv2
+        from screen_ticker_scanner import create_ocr_reader, scan_frame
+    except Exception as exc:
+        error = str(exc)
+        dlog.error(f"[SCANNER READ] dependency load failed: {error}")
+        return {"ok": False, "error": "Scanner dependencies unavailable: " + error}
+
+    try:
+        reader = create_ocr_reader()
+        with mss.mss() as sct:
+            screenshot = sct.grab(region)
+        frame = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGRA2BGR)
+        tickers = scan_frame(frame, reader, detail=True)
+        timestamp = datetime.now(ET).strftime("%H:%M:%S")
+        return {
+            "ok": True,
+            "timestamp": timestamp,
+            "region": region,
+            "tickers": tickers,
+        }
+    except Exception as exc:
+        error = str(exc)
+        dlog.error(f"[SCANNER READ] failed: {error}")
+        return {"ok": False, "error": error}
+
+@app.get("/api/scanner/select_region")
+async def api_scanner_select_region():
+    try:
+        from screen_ticker_scanner import select_screen_region
+    except Exception as exc:
+        error = str(exc)
+        dlog.error(f"[SCANNER SELECT] import failed: {error}")
+        return {"ok": False, "error": f"Scanner module unavailable: {error}"}
+
+    try:
+        region = select_screen_region()
+        if region is None:
+            return {"ok": False, "error": "Selection cancelled or no region selected"}
+        return {"ok": True, "region": region}
+    except Exception as exc:
+        error = str(exc)
+        dlog.error(f"[SCANNER SELECT] failed: {error}")
+        return {"ok": False, "error": error}
 
 @app.get("/api/finnhub_prices")
 async def api_finnhub_prices(tickers: str = ""):

@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+alpaca-py
+pandas
+numpy
+websockets
+requests
+beautifulsoup4
+finvizfinance
+yfinance
+mss
+opencv-python
+easyocr
+pyyaml

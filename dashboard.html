@@ -200,6 +200,14 @@
                 </button>
 
                 <button
+                    onclick="testScreenScanner()"
+                    class="flex items-center gap-x-2 px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-black rounded-3xl transition-colors"
+                >
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <span>Test Scanner</span>
+                </button>
+
+                <button
                     onclick="openSettings()"
                     class="w-11 h-11 bg-zinc-900 hover:bg-zinc-800 rounded-3xl flex items-center justify-center text-xl"
                 >
@@ -209,6 +217,25 @@
         </div>
 
         <div class="flex flex-1 overflow-hidden">
+            <!-- LOG PANE -->
+            <div class="w-[380px] min-w-[360px] bg-zinc-950 border-r border-zinc-800 flex flex-col overflow-hidden">
+                <div class="px-5 py-4 border-b border-zinc-800 bg-zinc-900/70 flex items-center justify-between">
+                    <span><span class="text-emerald-400">🔥</span> Scanner Log</span>
+                    <button
+                        onclick="clearLog()"
+                        class="text-zinc-400 hover:text-red-400 text-xs"
+                    >
+                        CLEAR
+                    </button>
+                </div>
+                <div
+                    id="live-log"
+                    class="flex-1 p-4 overflow-auto font-mono text-xs text-emerald-300 space-y-1 bg-zinc-950"
+                >
+                    <!-- SSE populated -->
+                </div>
+            </div>
+
             <!-- MAIN CONTENT -->
             <div class="flex-1 p-8 overflow-auto">
                 <div class="flex items-end justify-between mb-6">
@@ -348,31 +375,6 @@
                     </div>
                 </div>
 
-                <!-- Live Log -->
-                <div
-                    class="h-48 flex flex-col min-h-0 border-t border-zinc-800"
-                >
-                    <div
-                        class="px-5 py-3 border-b border-zinc-800 flex items-center justify-between text-sm bg-zinc-900/50"
-                    >
-                        <span
-                            ><span class="text-emerald-400">🔥</span> Scanner
-                            Log</span
-                        >
-                        <button
-                            onclick="clearLog()"
-                            class="text-zinc-400 hover:text-red-400 text-xs"
-                        >
-                            CLEAR
-                        </button>
-                    </div>
-                    <div
-                        id="live-log"
-                        class="flex-1 p-4 overflow-auto font-mono text-xs text-emerald-300 space-y-1 bg-zinc-950"
-                    >
-                        <!-- SSE populated -->
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -410,6 +412,143 @@
                             placeholder="GME, AMC, KOSS, BBBY..."
                             class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 focus:outline-none focus:border-emerald-400"
                         ></textarea>
+                    </div>
+
+                    <!-- OCR Scanner Region -->
+                    <div>
+                        <h3
+                            class="text-xs uppercase tracking-widest text-zinc-400 mb-3"
+                        >
+                            OCR Scanner Region
+                        </h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-sm text-zinc-400 mb-2 block"
+                                    >Top</label
+                                >
+                                <input
+                                    id="scanner-top"
+                                    type="number"
+                                    value="200"
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 focus:outline-none focus:border-emerald-400"
+                                />
+                            </div>
+                            <div>
+                                <label class="text-sm text-zinc-400 mb-2 block"
+                                    >Left</label
+                                >
+                                <input
+                                    id="scanner-left"
+                                    type="number"
+                                    value="300"
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 focus:outline-none focus:border-emerald-400"
+                                />
+                            </div>
+                            <div>
+                                <label class="text-sm text-zinc-400 mb-2 block"
+                                    >Width</label
+                                >
+                                <input
+                                    id="scanner-width"
+                                    type="number"
+                                    value="1200"
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 focus:outline-none focus:border-emerald-400"
+                                />
+                            </div>
+                            <div>
+                                <label class="text-sm text-zinc-400 mb-2 block"
+                                    >Height</label
+                                >
+                                <input
+                                    id="scanner-height"
+                                    type="number"
+                                    value="600"
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 focus:outline-none focus:border-emerald-400"
+                                />
+                            </div>
+                        </div>
+                        <p class="text-zinc-500 text-xs mt-2">
+                            Enter the screen capture area for OCR testing.
+                        </p>
+                        <div class="flex flex-wrap gap-3 mt-3">
+                            <button
+                                type="button"
+                                onclick="grabRegion()"
+                                class="px-4 py-3 bg-sky-500 hover:bg-sky-400 text-black rounded-2xl font-semibold"
+                            >
+                                Capture Region from Screen
+                            </button>
+                            <button
+                                type="button"
+                                onclick="scanRegionTickers()"
+                                class="px-4 py-3 bg-emerald-500 hover:bg-emerald-400 text-black rounded-2xl font-semibold"
+                            >
+                                Scan Region for Tickers
+                            </button>
+                            <button
+                                id="scan-loop-button"
+                                type="button"
+                                onclick="toggleScanLoop()"
+                                class="px-4 py-3 bg-violet-500 hover:bg-violet-400 text-black rounded-2xl font-semibold"
+                            >
+                                Start Live Scan
+                            </button>
+                        </div>
+                        <div class="mt-4 grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="text-sm text-zinc-400 mb-2 block"
+                                    >Section</label
+                                >
+                                <select
+                                    id="scan-section-filter"
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 focus:outline-none focus:border-emerald-400"
+                                >
+                                    <option value="All">All Sections</option>
+                                    <option value="Momentum">Momentum</option>
+                                    <option value="Volume Scanner">
+                                        Volume Scanner
+                                    </option>
+                                    <option value="Price Spike Scanner">
+                                        Price Spike Scanner
+                                    </option>
+                                    <option value="Gap List">Gap List</option>
+                                    <option value="Trending Above VWAP">
+                                        Trending Above VWAP
+                                    </option>
+                                    <option value="Bob's Open Watch List">
+                                        Bob's Open Watch List
+                                    </option>
+                                    <option value="Find it First Momentum">
+                                        Find it First Momentum
+                                    </option>
+                                    <option value="Volume HOD">
+                                        Volume HOD
+                                    </option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-sm text-zinc-400 mb-2 block"
+                                    >Time from</label
+                                >
+                                <input
+                                    id="scan-time-from"
+                                    type="text"
+                                    placeholder="HH:MM"
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 focus:outline-none focus:border-emerald-400"
+                                />
+                            </div>
+                            <div>
+                                <label class="text-sm text-zinc-400 mb-2 block"
+                                    >Time to</label
+                                >
+                                <input
+                                    id="scan-time-to"
+                                    type="text"
+                                    placeholder="HH:MM"
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 focus:outline-none focus:border-emerald-400"
+                                />
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Zone Thresholds -->
@@ -753,7 +892,10 @@
             let manualTickers = [];
             let trendingTickers = [];
             let trendingSources = {};
+            let currentConfig = {};
             let watchlistPrices = {};
+            let scanLoopInterval = null;
+            const SCAN_LOOP_MS = 5000;
             let watchlistSignals = {}; // Store signal data for each ticker
             let sseConnection = null;
             let strategyPollingInterval = null;
@@ -762,10 +904,22 @@
             let watchlistPollInterval = null;
             let watchlistPollMs = null;
             let lastWatchlistPoll = 0;
+            let manualSectionOpen = true;
+            let trendingSectionOpen = true;
             const FAST_POLL_MS = 5000; // 5 seconds when near zone
             const SLOW_POLL_MS = 20000; // 20 seconds when no tickers near zone
             const STRATEGY_FAST_MS = 5000; // 5 seconds when strategy is non-red/on deck
             const STRATEGY_SLOW_MS = 10000; // 10 seconds when strategy is red/off deck
+
+            function toggleManualSection() {
+                manualSectionOpen = !manualSectionOpen;
+                renderWatchlistScanner();
+            }
+
+            function toggleTrendingSection() {
+                trendingSectionOpen = !trendingSectionOpen;
+                renderWatchlistScanner();
+            }
 
             function getZoneLabel(wr) {
                 const readyThreshold = parseInt(
@@ -817,7 +971,8 @@
                     const configRes = await fetch("/api/config");
                     if (configRes.ok) {
                         const config = await configRes.json();
-                        manualTickers = config.config?.tickers || [];
+                        currentConfig = config.config || {};
+                        manualTickers = currentConfig.tickers || [];
                         renderWatchlistScanner();
                     }
 
@@ -1042,49 +1197,79 @@
                     return;
                 }
 
+                const manualPositiveCount = manualTickers.filter(
+                    (ticker) => getSignalIndicatorColor(ticker).passCount >= 2,
+                ).length;
+                const trendingPositiveCount = trendingTickers.filter(
+                    (ticker) => getSignalIndicatorColor(ticker).passCount >= 2,
+                ).length;
+
                 let html = "";
 
                 // Manual tickers section
                 if (manualTickers.length > 0) {
-                    html +=
-                        '<div class="px-4 py-2 bg-zinc-900/30"><span class="text-[10px] uppercase tracking-widest text-zinc-500 font-medium">Manual</span></div>';
-                    // Sort manual tickers by signal strength: green, yellow, red
-                    const sortedManualTickers = [...manualTickers].sort(
-                        (a, b) => {
-                            const rankA = getSignalSortRank(a);
-                            const rankB = getSignalSortRank(b);
-                            return rankA - rankB || a.localeCompare(b);
-                        },
-                    );
-                    html += '<div class="grid grid-cols-2">';
-                    html += sortedManualTickers
-                        .map((ticker) => renderWatchlistRow(ticker, "manual"))
-                        .join("");
+                    html += `<div class="border-b border-zinc-800">
+                        <button type="button" onclick="toggleManualSection()" class="w-full flex items-center justify-between px-4 py-3 bg-zinc-900/30 hover:bg-zinc-800 transition-colors text-left">
+                            <span class="text-[10px] uppercase tracking-widest text-zinc-500 font-medium">Manual</span>
+                            <span class="flex items-center gap-x-2 text-zinc-400 text-xs">
+                                <span>${manualTickers.length} total</span>
+                                <span class="text-emerald-400">${manualPositiveCount} yellow/green</span>
+                                <i class="fa-solid fa-chevron-${manualSectionOpen ? "down" : "right"} text-zinc-400 text-[10px]"></i>
+                            </span>
+                        </button>
+                    `;
+                    if (manualSectionOpen) {
+                        const sortedManualTickers = [...manualTickers].sort(
+                            (a, b) => {
+                                const rankA = getSignalSortRank(a);
+                                const rankB = getSignalSortRank(b);
+                                return rankA - rankB || a.localeCompare(b);
+                            },
+                        );
+                        html +=
+                            '<div class="grid grid-cols-2 gap-2 p-3 bg-zinc-950">';
+                        html += sortedManualTickers
+                            .map((ticker) =>
+                                renderWatchlistRow(ticker, "manual"),
+                            )
+                            .join("");
+                        html += "</div>";
+                    }
                     html += "</div>";
                 }
 
                 // Trending tickers section
                 if (trendingTickers.length > 0) {
-                    html +=
-                        '<div class="px-4 py-2 bg-zinc-900/30 border-t border-zinc-800/50"><span class="text-[10px] uppercase tracking-widest text-zinc-500 font-medium">Trending</span></div>';
-                    // Sort trending tickers by signal strength: green, yellow, red
-                    const sortedTrendingTickers = [...trendingTickers].sort(
-                        (a, b) => {
-                            const rankA = getSignalSortRank(a);
-                            const rankB = getSignalSortRank(b);
-                            return rankA - rankB || a.localeCompare(b);
-                        },
-                    );
-                    // Render in 2-column grid
-                    html += '<div class="grid grid-cols-2">';
-                    html += sortedTrendingTickers
-                        .map((ticker) =>
-                            renderWatchlistRow(
-                                ticker,
-                                trendingSources[ticker] || "trending",
-                            ),
-                        )
-                        .join("");
+                    html += `<div class="border-b border-zinc-800">
+                        <button type="button" onclick="toggleTrendingSection()" class="w-full flex items-center justify-between px-4 py-3 bg-zinc-900/30 hover:bg-zinc-800 transition-colors text-left">
+                            <span class="text-[10px] uppercase tracking-widest text-zinc-500 font-medium">Trending</span>
+                            <span class="flex items-center gap-x-2 text-zinc-400 text-xs">
+                                <span>${trendingTickers.length} total</span>
+                                <span class="text-emerald-400">${trendingPositiveCount} yellow/green</span>
+                                <i class="fa-solid fa-chevron-${trendingSectionOpen ? "down" : "right"} text-zinc-400 text-[10px]"></i>
+                            </span>
+                        </button>
+                    `;
+                    if (trendingSectionOpen) {
+                        const sortedTrendingTickers = [...trendingTickers].sort(
+                            (a, b) => {
+                                const rankA = getSignalSortRank(a);
+                                const rankB = getSignalSortRank(b);
+                                return rankA - rankB || a.localeCompare(b);
+                            },
+                        );
+                        html +=
+                            '<div class="grid grid-cols-2 gap-2 p-3 bg-zinc-950">';
+                        html += sortedTrendingTickers
+                            .map((ticker) =>
+                                renderWatchlistRow(
+                                    ticker,
+                                    trendingSources[ticker] || "trending",
+                                ),
+                            )
+                            .join("");
+                        html += "</div>";
+                    }
                     html += "</div>";
                 }
 
@@ -1279,6 +1464,275 @@
                 await loadData();
             }
 
+            async function grabRegion() {
+                addLog("Opening screen region selector...");
+                try {
+                    const response = await fetch("/api/scanner/select_region");
+                    const data = await response.json();
+                    if (!data.ok) {
+                        addLog(`Region capture failed: ${data.error}`);
+                        alert(`Region capture failed:\n${data.error}`);
+                        return;
+                    }
+                    const region = data.region;
+                    document.getElementById("scanner-top").value = region.top;
+                    document.getElementById("scanner-left").value = region.left;
+                    document.getElementById("scanner-width").value =
+                        region.width;
+                    document.getElementById("scanner-height").value =
+                        region.height;
+                    currentConfig.scan_region_top = region.top;
+                    currentConfig.scan_region_left = region.left;
+                    currentConfig.scan_region_width = region.width;
+                    currentConfig.scan_region_height = region.height;
+                    addLog(
+                        `Captured region: top=${region.top}, left=${region.left}, width=${region.width}, height=${region.height}`,
+                    );
+                    alert(
+                        `Captured region:\nTop: ${region.top}\nLeft: ${region.left}\nWidth: ${region.width}\nHeight: ${region.height}`,
+                    );
+                } catch (error) {
+                    addLog("Region capture error: " + (error.message || error));
+                    alert("Region capture error: " + (error.message || error));
+                }
+            }
+
+            function parseTimeValue(value) {
+                if (!value) return null;
+                const parts = value
+                    .trim()
+                    .split(":")
+                    .map((part) => Number(part));
+                if (
+                    parts.length === 2 &&
+                    Number.isInteger(parts[0]) &&
+                    Number.isInteger(parts[1])
+                ) {
+                    return parts[0] * 60 + parts[1];
+                }
+                if (
+                    parts.length === 3 &&
+                    Number.isInteger(parts[0]) &&
+                    Number.isInteger(parts[1]) &&
+                    Number.isInteger(parts[2])
+                ) {
+                    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+                }
+                return null;
+            }
+
+            function parseTimestamp(timestamp) {
+                if (!timestamp) return null;
+                return parseTimeValue(timestamp);
+            }
+
+            function filterScanEntries(entries) {
+                const sectionFilter = document.getElementById(
+                    "scan-section-filter",
+                ).value;
+                const fromSeconds = parseTimeValue(
+                    document.getElementById("scan-time-from").value,
+                );
+                const toSeconds = parseTimeValue(
+                    document.getElementById("scan-time-to").value,
+                );
+
+                return entries.filter((entry) => {
+                    if (
+                        sectionFilter !== "All" &&
+                        entry.section !== sectionFilter
+                    ) {
+                        return false;
+                    }
+                    const ts = parseTimestamp(entry.timestamp);
+                    if (
+                        fromSeconds !== null &&
+                        (ts === null || ts < fromSeconds)
+                    ) {
+                        return false;
+                    }
+                    if (toSeconds !== null && (ts === null || ts > toSeconds)) {
+                        return false;
+                    }
+                    return true;
+                });
+            }
+
+            function groupTopFiveBySection(entries) {
+                const grouped = {};
+                entries.forEach((entry) => {
+                    const section = entry.section || "Unknown";
+                    if (!grouped[section]) {
+                        grouped[section] = [];
+                    }
+                    if (grouped[section].length < 5) {
+                        grouped[section].push(entry);
+                    }
+                });
+                return grouped;
+            }
+
+            function formatTopRowsBySection(entries) {
+                const grouped = groupTopFiveBySection(entries);
+                return Object.entries(grouped)
+                    .map(([section, rows]) => {
+                        const rowStrings = rows.map(
+                            (entry) => `${entry.ticker} @ ${entry.timestamp || "?"}`,
+                        );
+                        return `${section}: ${rowStrings.join(", ")}`;
+                    })
+                    .join(" | ");
+            }
+
+            async function scanRegionTickers(fromLoop = false) {
+                const top = Number(
+                    document.getElementById("scanner-top").value,
+                );
+                const left = Number(
+                    document.getElementById("scanner-left").value,
+                );
+                const width = Number(
+                    document.getElementById("scanner-width").value,
+                );
+                const height = Number(
+                    document.getElementById("scanner-height").value,
+                );
+                if (top < 0 || left < 0 || width <= 0 || height <= 0) {
+                    if (!fromLoop) {
+                        alert("Please enter a valid region before scanning.");
+                    }
+                    return;
+                }
+
+                addLog("Scanning current screen region for tickers...");
+                try {
+                    const params = new URLSearchParams();
+                    params.set("top", top);
+                    params.set("left", left);
+                    params.set("width", width);
+                    params.set("height", height);
+                    const response = await fetch(
+                        `/api/scanner/read_region?${params.toString()}`,
+                    );
+                    const data = await response.json();
+                    if (!data.ok) {
+                        addLog(`Region scan failed: ${data.error}`);
+                        if (!fromLoop) {
+                            alert(`Region scan failed:\n${data.error}`);
+                        }
+                        return;
+                    }
+                    const entries = data.tickers || [];
+                    const filtered = filterScanEntries(entries);
+                    const preview = formatTopRowsBySection(filtered);
+                    addLog(
+                        `Region scan @ ${data.timestamp} top rows: ${preview || "none"}`,
+                    );
+                    if (filtered.length === 0) {
+                        const message = `No matching tickers found for selected section/time at ${data.timestamp}`;
+                        if (!fromLoop) {
+                            alert(message);
+                        }
+                        return;
+                    }
+
+                    const formatted = filtered
+                        .map(
+                            (entry) =>
+                                `${entry.ticker} (${entry.section || "Unknown"} @ ${
+                                    entry.timestamp || "?"
+                                })`,
+                        )
+                        .join(", ");
+                    if (!fromLoop) {
+                        const shouldAdd = confirm(
+                            `Detected tickers at ${data.timestamp}:\n${formatted}\n\nAdd these to your watchlist?`,
+                        );
+                        if (shouldAdd) {
+                            const uniqueTickers = Array.from(
+                                new Set(filtered.map((entry) => entry.ticker)),
+                            );
+                            uniqueTickers.forEach((ticker) =>
+                                addToWatchlist(ticker),
+                            );
+                            addLog(
+                                `Added ${uniqueTickers.length} tickers from region scan to watchlist`,
+                            );
+                        }
+                    }
+                } catch (error) {
+                    addLog("Region scan error: " + (error.message || error));
+                    if (!fromLoop) {
+                        alert("Region scan error: " + (error.message || error));
+                    }
+                }
+            }
+
+            function toggleScanLoop() {
+                if (scanLoopInterval) {
+                    stopScanLoop();
+                } else {
+                    startScanLoop();
+                }
+            }
+
+            function startScanLoop() {
+                if (scanLoopInterval) return;
+                scanLoopInterval = setInterval(
+                    () => scanRegionTickers(true),
+                    SCAN_LOOP_MS,
+                );
+                document.getElementById("scan-loop-button").textContent =
+                    "Stop Live Scan";
+                addLog("Live scan started.");
+            }
+
+            function stopScanLoop() {
+                if (!scanLoopInterval) return;
+                clearInterval(scanLoopInterval);
+                scanLoopInterval = null;
+                document.getElementById("scan-loop-button").textContent =
+                    "Start Live Scan";
+                addLog("Live scan stopped.");
+            }
+
+            async function testScreenScanner() {
+                addLog("Starting screen scanner test...");
+                try {
+                    const response = await fetch("/api/scanner/test");
+                    const data = await response.json();
+                    if (!data.ok) {
+                        addLog(`Scanner test failed: ${data.error}`);
+                        return;
+                    }
+
+                    const tickerList = data.tickers || [];
+                    if (tickerList.length === 0) {
+                        addLog(
+                            `Scanner test complete @ ${data.timestamp}: no tickers found`,
+                        );
+                        alert(
+                            `No tickers detected at ${data.timestamp}. Adjust your region and try again.`,
+                        );
+                        return;
+                    }
+
+                    const formatted = tickerList.join(", ");
+                    const shouldAdd = confirm(
+                        `Detected tickers at ${data.timestamp}:\n${formatted}\n\nAdd these to your watchlist?`,
+                    );
+                    addLog(`Scanner test @ ${data.timestamp}: ${formatted}`);
+                    if (shouldAdd) {
+                        tickerList.forEach((ticker) => addToWatchlist(ticker));
+                        addLog(
+                            `Added ${tickerList.length} tickers from scanner to watchlist`,
+                        );
+                    }
+                } catch (error) {
+                    addLog("Scanner test error: " + error.message || error);
+                }
+            }
+
             function connectSSE() {
                 if (sseConnection) sseConnection.close();
                 sseConnection = new EventSource("/events");
@@ -1328,6 +1782,14 @@
                     .classList.remove("hidden");
                 document.getElementById("manual-tickers").value =
                     manualTickers.join(", ");
+                document.getElementById("scanner-top").value =
+                    currentConfig.scan_region_top || 200;
+                document.getElementById("scanner-left").value =
+                    currentConfig.scan_region_left || 300;
+                document.getElementById("scanner-width").value =
+                    currentConfig.scan_region_width || 1200;
+                document.getElementById("scanner-height").value =
+                    currentConfig.scan_region_height || 600;
             }
 
             function closeSettings() {
@@ -1345,11 +1807,34 @@
                 manualTickers = tickers;
                 renderWatchlistScanner();
 
+                const scanRegionTop = parseInt(
+                    document.getElementById("scanner-top").value,
+                    10,
+                );
+                const scanRegionLeft = parseInt(
+                    document.getElementById("scanner-left").value,
+                    10,
+                );
+                const scanRegionWidth = parseInt(
+                    document.getElementById("scanner-width").value,
+                    10,
+                );
+                const scanRegionHeight = parseInt(
+                    document.getElementById("scanner-height").value,
+                    10,
+                );
+
                 try {
                     await fetch("/api/config", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ tickers }),
+                        body: JSON.stringify({
+                            tickers,
+                            scan_region_top: scanRegionTop,
+                            scan_region_left: scanRegionLeft,
+                            scan_region_width: scanRegionWidth,
+                            scan_region_height: scanRegionHeight,
+                        }),
                     });
                     addLog("Settings saved");
                 } catch (e) {}

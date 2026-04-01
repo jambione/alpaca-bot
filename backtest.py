@@ -14,42 +14,8 @@ import numpy as np
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
-try:
-    # Stub out web modules for import compatibility
-    import types as _types
-    import sys as _sys
-
-    def _noop_decorator(*a, **kw):
-        def _dec(f): return f
-        return _dec
-
-    class _FakeApp:
-        def __init__(self, **kw): pass
-        def get(self, *a, **kw): return _noop_decorator(*a, **kw)
-        def post(self, *a, **kw): return _noop_decorator(*a, **kw)
-        def delete(self, *a, **kw): return _noop_decorator(*a, **kw)
-        def put(self, *a, **kw): return _noop_decorator(*a, **kw)
-        def on_event(self, *a, **kw): return _noop_decorator(*a, **kw)
-        def mount(self, *a, **kw): pass
-        def add_middleware(self, *a, **kw): pass
-
-    for _mod_name, _attrs in [
-        ("uvicorn", {"run": lambda *a, **kw: None}),
-        ("fastapi", {"FastAPI": _FakeApp, "Request": object, "HTTPException": Exception}),
-        ("fastapi.responses", {"HTMLResponse": object, "StreamingResponse": object, "JSONResponse": object}),
-        ("fastapi.staticfiles", {"StaticFiles": object}),
-        ("fastapi.middleware.cors", {"CORSMiddleware": object}),
-    ]:
-        if _mod_name not in _sys.modules:
-            _m = _types.ModuleType(_mod_name)
-            for _k, _v in _attrs.items():
-                setattr(_m, _k, _v)
-            _sys.modules[_mod_name] = _m
-
-    from alpaca_dashboard import compute_signals, load_config
-except ImportError as e:
-    print(f"ERROR: Could not import from alpaca_dashboard.py: {e}")
-    sys.exit(1)
+from config import load_config
+from signals import compute_signals
 
 try:
     from alpaca.data.historical import StockHistoricalDataClient

@@ -3,16 +3,27 @@
 ## Files
 
 | File                   | Description                                                  |
-| ---------------------- | ------------------------------------------------------------ |
+| ---------------------- | ------------------------------------------------------------ | --- | -------------------------- | ---------------------------------------------------- | --- | --------------- | --------------------------------------------------- |
 | `alpaca_stocks_bot.py` | Core trading bot — runs the momentum strategy loop           |
-| `alpaca_dashboard.py`  | Web dashboard — start/stop bot, view positions & trades live |
-| `trade_log.csv`        | Auto-generated trade history (created on first run)          |
+| `alpaca_dashboard.py`  | Web dashboard — start/stop bot, view positions & trades live |     | `screen_ticker_scanner.py` | Local live OCR scanner for video/screen ticker feeds |     | `trade_log.csv` | Auto-generated trade history (created on first run) |
 | `alpaca_bot.log`       | Auto-generated bot log (created on first run)                |
 
 ## Setup
 
 ```bash
 pip install fastapi uvicorn alpaca-py pandas numpy websockets
+```
+
+To use the local screen OCR ticker scanner, install these additional open-source packages:
+
+```bash
+pip install mss opencv-python easyocr pyyaml
+```
+
+You can also install everything via:
+
+```bash
+pip install -r requirements.txt
 ```
 
 ## Running
