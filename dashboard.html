@@ -218,9 +218,16 @@
 
         <div class="flex flex-1 overflow-hidden">
             <!-- LOG PANE -->
-            <div class="w-[380px] min-w-[360px] bg-zinc-950 border-r border-zinc-800 flex flex-col overflow-hidden">
-                <div class="px-5 py-4 border-b border-zinc-800 bg-zinc-900/70 flex items-center justify-between">
-                    <span><span class="text-emerald-400">🔥</span> Scanner Log</span>
+            <div
+                class="w-[380px] min-w-[360px] bg-zinc-950 border-r border-zinc-800 flex flex-col overflow-hidden"
+            >
+                <div
+                    class="px-5 py-4 border-b border-zinc-800 bg-zinc-900/70 flex items-center justify-between"
+                >
+                    <span
+                        ><span class="text-emerald-400">🔥</span> Scanner
+                        Log</span
+                    >
                     <button
                         onclick="clearLog()"
                         class="text-zinc-400 hover:text-red-400 text-xs"
@@ -374,7 +381,6 @@
                         <!-- JS populated -->
                     </div>
                 </div>
-
             </div>
         </div>
 
@@ -1577,7 +1583,8 @@
                 return Object.entries(grouped)
                     .map(([section, rows]) => {
                         const rowStrings = rows.map(
-                            (entry) => `${entry.ticker} @ ${entry.timestamp || "?"}`,
+                            (entry) =>
+                                `${entry.ticker} @ ${entry.timestamp || "?"}`,
                         );
                         return `${section}: ${rowStrings.join(", ")}`;
                     })
