@@ -1568,9 +1568,97 @@ async def api_get_config():
         return {"ok": True, "config": dict(STATE.config)}
 
 
+@app.post("/api/validate_paper_to_live")
+async def api_validate_paper_to_live():
+    """
+    Pre-flight validation before switching from paper to live trading.
+    Returns checklist of conditions and readiness status.
+    
+    [P1-03: Paper-to-Live Validation Gate]
+    """
+    checks = {
+        "timestamp": datetime.now(ET).isoformat(),
+        "checks": {
+            "api_connectivity": False,
+            "positions_sync": False,
+            "config_valid": False,
+            "live_mode_readiness": False,
+        },
+        "warnings": [],
+        "status": "PENDING",  # READY / NOT_READY / ERROR
+    }
+    
+    try:
+        with STATE.lock:
+            cfg = dict(STATE.config)
+            
+            # Check 1: API connectivity
+            try:
+                tc, _ = connect_alpaca(cfg)
+                acct = tc.get_account()
+                checks["checks"]["api_connectivity"] = True
+                checks["account_equity"] = float(acct.equity)
+                checks["account_trading_power"] = float(acct.trading_power)
+                if acct.cash and float(acct.cash) < 2500:
+                    checks["warnings"].append(
+                        "Account has less than $2500 cash — day trading buying power may be limited"
+                    )
+            except Exception as e:
+                checks["warnings"].append(f"API connectivity check failed: {str(e)}")
+                
+            # Check 2: Position sync
+            open_positions = len(STATE.positions)
+            if open_positions > 0:
+                checks["warnings"].append(
+                    f"Bot has {open_positions} open position(s). Close all positions before switching to live."
+                )
+            else:
+                checks["checks"]["positions_sync"] = True
+                
+            # Check 3: Config validation
+            if cfg.get("api_key") and cfg.get("secret_key"):
+                checks["checks"]["config_valid"] = True
+            else:
+                checks["warnings"].append("API credentials not configured")
+                
+            # Check 4: Overall readiness
+            if (checks["checks"]["api_connectivity"] and 
+                checks["checks"]["positions_sync"] and 
+                checks["checks"]["config_valid"]):
+                checks["checks"]["live_mode_readiness"] = True
+                checks["status"] = "READY"
+            else:
+                checks["status"] = "NOT_READY"
+                
+        return checks
+        
+    except Exception as e:
+        checks["status"] = "ERROR"
+        checks["error"] = str(e)
+        return checks
+
+
 @app.post("/api/config")
 async def api_config(request: Request):
     body = await request.json()
+    
+    # ─── P1-03: Paper-to-Live Validation Gate ───────────────────────────────────
+    # Detect if we're switching from paper trading to live trading
+    current_paper = STATE.config.get("paper", True)
+    request_paper = body.get("paper", current_paper)
+    
+    if current_paper and not request_paper:
+        # Switching paper → live
+        # Require explicit validation before allowing this dangerous transition
+        validation_token = body.get("_live_confirmed", False)
+        if not validation_token:
+            dlog.error("BLOCKED: Paper-to-live switch attempted without validation confirmation")
+            return {
+                "ok": False,
+                "error": "Paper-to-live switch requires validation. Call /api/validate_paper_to_live first and confirm with _live_confirmed=true",
+                "required_validation": True,
+            }
+    
     with STATE.lock:
         # Update allowed keys only
         safe_keys = [

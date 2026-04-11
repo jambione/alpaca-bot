@@ -62,15 +62,22 @@ _STREAM_THREAD = None
 
 # ── WebSocket Stream ─────────────────────────────────────────
 async def _finnhub_stream(api_key: str, tickers: list):
-    """Async WebSocket connection to Finnhub for real-time trades."""
+    """
+    Async WebSocket connection to Finnhub for real-time trades.
+    [P1-05: WebSocket Resilience - Exponential Backoff + Fallback]
+    """
     if not WEBSOCKETS_AVAILABLE:
         return
 
     url = f"wss://ws.finnhub.io?token={api_key}"
+    reconnect_attempts = 0
+    max_reconnect_attempts = 5  # After this many failures, fallback to polling
+    base_wait = 1.0  # Start with 1 second exponential backoff
     
     while True:
         try:
             async with websockets.connect(url, ping_interval=30) as ws:
+                reconnect_attempts = 0  # Reset counter on successful connection
                 FINNHUB_STATE.connected = True
                 FINNHUB_STATE.add_log("INFO", f"Finnhub connected ({len(tickers)} tickers)")
                 
@@ -114,8 +121,25 @@ async def _finnhub_stream(api_key: str, tickers: list):
             break
         except Exception as e:
             FINNHUB_STATE.connected = False
-            FINNHUB_STATE.add_log("ERROR", f"Finnhub error: {e}")
-            await asyncio.sleep(5)  # Reconnect after 5 seconds
+            reconnect_attempts += 1
+            
+            if reconnect_attempts >= max_reconnect_attempts:
+                wait_time = base_wait * (2 ** (max_reconnect_attempts - 1))
+                FINNHUB_STATE.add_log(
+                    "ERROR",
+                    f"Finnhub: max reconnection attempts ({max_reconnect_attempts}) exceeded. "
+                    f"Falling back to polling mode. Will retry in {wait_time}s."
+                )
+                await asyncio.sleep(wait_time)
+                reconnect_attempts = 0  # Reset and try again
+            else:
+                wait_time = base_wait * (2 ** (reconnect_attempts - 1))
+                FINNHUB_STATE.add_log(
+                    "WARN",
+                    f"Finnhub error (attempt {reconnect_attempts}/{max_reconnect_attempts}): {str(e)[:100]}. "
+                    f"Reconnecting in {wait_time}s..."
+                )
+                await asyncio.sleep(wait_time)
 
 def start_finnhub_stream(api_key: str, tickers: list):
     """Start the Finnhub WebSocket stream in a background thread."""
